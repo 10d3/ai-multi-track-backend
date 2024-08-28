@@ -9,7 +9,28 @@ const port = 8080;
 app.use(bodyParser.json());
 
 app.get("/api", (req: any, res: any) => {
-  res.send("Welcome to the first api for audio manipulation");
+  res.send({
+    intro: "Welcome to the combine backend",
+    routes: ["/api/isolate-speakers", "/api/combine-audio"],
+    parameters: [
+      {
+        route: "/api/isolate-speakers",
+        params: [
+          { name: "transcription", type: "string" },
+          { name: "audioFilePath", type: "string | audioFile" },
+        ],
+      },
+      {
+        route: "/api/combine-audio",
+        params: [
+          { name: "newAudioFilePath", type: "string | audioFile" },
+          { name: "backgroundMusicFilePath", type: "string | audioFile" },
+          { name: "outputFilePath", type: "string" },
+        ],
+      },
+    ],
+    // documentation: 'https://docs.consumet.org/#tag/zoro',
+  });
 });
 
 app.post("/api/isolate-speakers", async (req: any, res: any) => {
