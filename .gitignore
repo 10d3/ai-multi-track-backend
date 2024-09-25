@@ -179,3 +179,5 @@ dist
 public
 
 *.mp3
+
+config/*.json
