@@ -49,7 +49,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 app.get("/api", (req: any, res: any) => {
   res.send({
     intro: "Welcome to the combine backend",
-    routes: ["/api/isolate-speakers", "/api/combine-audio"],
+    routes: ["/api/isolate-speakers", "/api/combine-audio", "/api/ytdl"],
     parameters: [
       {
         route: "/api/isolate-speakers",
@@ -65,6 +65,12 @@ app.get("/api", (req: any, res: any) => {
           { name: "outputFilePath", type: "string" },
         ],
       },
+      {
+        route: "/api/ytdl",
+        params: [
+          { name: "url", type: "string" },
+        ],
+      }
     ],
     // documentation: 'https://docs.consumet.org/#tag/zoro',
   });
