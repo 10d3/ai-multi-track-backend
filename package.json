@@ -18,7 +18,10 @@
     "fluent-ffmpeg": "^2.1.3",
     "multer": "^1.4.5-lts.1",
     "uploadthing": "^7.0.2",
-    "uuid": "^10.0.0",
-    "ytdl-core": "^4.11.5"
+    "uuid": "^10.0.0"
+  },
+  "scripts": {
+    "install-python-deps": "pip install -r requirements.txt",
+    "postinstall": "bun run install-python-deps"
   }
 }
