@@ -3,13 +3,9 @@ import type { Request, Response, NextFunction } from "express";
 import { isolateSpeakers } from "./isolate-speaker";
 import multer from "multer";
 import { v4 as uuidv4 } from "uuid";
-import { UTApi } from "uploadthing/server";
 import { promisify } from "util";
 import * as dotenv from "dotenv";
 import { Storage } from "@google-cloud/storage";
-import type { UTApiOptions } from "uploadthing/types";
-// import { utapi } from "./path/to/uploadService";
-const ffmpeg = require("fluent-ffmpeg");
 const { exec } = require("child_process");
 const fs = require("fs");
 const path = require("path");
@@ -18,8 +14,6 @@ const bodyParser = require("body-parser");
 const app = express();
 const port = 8080;
 const writeFile = promisify(fs.writeFile);
-const ytdl = require("ytdl-core");
-// const multer = require("multer");
 
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, "public")));
@@ -33,47 +27,12 @@ const storageGoogle = new Storage({
     "endless-bolt-430416-h3-e0a89a12879b.json"
   ),
 });
-// const upload = multer({ dest: "uploads/" });
+
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
 app.use((req: Request, res: Response, next: NextFunction) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept"
-  );
-  next();
-});
-
-app.get("/api", (req: any, res: any) => {
-  res.send({
-    intro: "Welcome to the combine backend",
-    routes: ["/api/isolate-speakers", "/api/combine-audio", "/api/ytdl"],
-    parameters: [
-      {
-        route: "/api/isolate-speakers",
-        params: [
-          { name: "transcription", type: "string" },
-          { name: "audioFilePath", type: "string | audioFile" },
-        ],
-      },
-      {
-        route: "/api/combine-audio",
-        params: [
-          { name: "audioFilePaths", type: "array of string | audioFiles" },
-          { name: "outputFilePath", type: "string" },
-        ],
-      },
-      {
-        route: "/api/ytdl",
-        params: [
-          { name: "url", type: "string" },
-        ],
-      }
-    ],
-    // documentation: 'https://docs.consumet.org/#tag/zoro',
-  });
+  res.sendFile(path.join(__dirname, 'public', 'api-documentation.html'));
 });
 
 app.post("/api/ytdl", async (req: any, res: any) => {
