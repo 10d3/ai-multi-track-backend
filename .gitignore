@@ -181,3 +181,5 @@ public
 *.mp3
 
 config/*.json
+
+env

@@ -18,6 +18,7 @@ const bodyParser = require("body-parser");
 const app = express();
 const port = 8080;
 const writeFile = promisify(fs.writeFile);
+const ytdl = require("ytdl-core");
 // const multer = require("multer");
 
 app.use(bodyParser.json());
@@ -67,6 +68,51 @@ app.get("/api", (req: any, res: any) => {
     ],
     // documentation: 'https://docs.consumet.org/#tag/zoro',
   });
+});
+
+app.post("/api/ytdl", async (req: any, res: any) => {
+  console.log(req.body);
+  const { url } = req.body;
+  if (!url) {
+    return res.status(400).json({ error: "url is required" });
+  }
+  const filePath = `audio_${uuidv4()}.mp3`;
+  const bucketName = "ai-multi-track";
+
+  exec(
+    `python download_audio.py ${url} ${filePath}`,
+    async (error:any, stdout:any, stderr:any) => {
+      if (error) {
+        console.error(`Error: ${error.message}`);
+        return res.status(500).json({ error: "Failed to download audio" });
+      }
+      if (stderr) {
+        console.error(`Stderr: ${stderr}`);
+        return res
+          .status(500)
+          .json({ error: "Error occurred during download" });
+      }
+      try {
+        await storageGoogle.bucket(bucketName).upload(filePath, {
+          resumable: false, // optional, set to true for large files
+        });
+        await storageGoogle
+          .bucket(bucketName)
+          .file(filePath)
+          .getSignedUrl({
+            action: "read",
+            expires: "03-09-2491",
+          });
+
+        const publicUrl = `https://storage.googleapis.com/${bucketName}/${filePath}`;
+        console.log(`Public URL: ${publicUrl}`);
+        res.json({ publicUrl });
+        fs.unlinkSync(filePath);
+      } catch (error) {
+        res.status(500).json({ error: error });
+      }
+    }
+  );
 });
 
 app.post("/api/isolate-speakers", async (req: any, res: any) => {
@@ -196,7 +242,7 @@ app.post(
         try {
           const bucketName = "ai-multi-track";
           console.log(outputFilename);
-          const outputFileBuffer = await fs.promises.readFile(outputFilename);
+          // const outputFileBuffer = await fs.promises.readFile(outputFilename);
           // Logic to upload output file (e.g., to S3 or similar service)
           // const uploadedFile = await utapi.uploadFiles(outputFileBuffer);
           await storageGoogle.bucket(bucketName).upload(outputFilename, {
