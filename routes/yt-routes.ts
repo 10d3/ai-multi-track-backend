@@ -6,6 +6,7 @@ import { exec } from 'child_process';
 import fs from 'fs';
 
 const router = express.Router();
+const auth = require('../middleware/auth');
 
 const storageGoogle = new Storage({
   keyFilename: path.join(
@@ -16,7 +17,7 @@ const storageGoogle = new Storage({
   ),
 });
 
-router.post("/", async (req, res) => {
+router.post("/", auth, async (req, res) => {
   console.log(req.body);
   const { url } = req.body;
 

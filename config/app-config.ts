@@ -2,6 +2,7 @@ import type { Application, Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
 import slowDown from 'express-slow-down';
 import dotenv from 'dotenv';
+import cors from 'cors';
 
 export function configureApp(app: Application) {
   dotenv.config();
@@ -17,6 +18,13 @@ export function configureApp(app: Application) {
     delayMs: () => 2000,
   });
 
+  const corsOptions = {
+    origin: 'http://localhost:3000', // Allow this specific origin
+    methods: 'GET,POST,PUT,DELETE', // Allowed methods
+    allowedHeaders: ['Content-Type', 'Authorization'], // Allowed headers, including 'Authorization'
+  };
+
+  app.use(cors(corsOptions));
   app.use(speedLimiter);
   app.use(limiter);
 
