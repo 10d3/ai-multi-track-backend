@@ -1,4 +1,3 @@
-// import type { NextFunction } from "express";
 import type { Request, Response, NextFunction } from "express";
 import { isolateSpeakers } from "./isolate-speaker";
 import multer from "multer";
@@ -6,17 +5,45 @@ import { v4 as uuidv4 } from "uuid";
 import { promisify } from "util";
 import * as dotenv from "dotenv";
 import { Storage } from "@google-cloud/storage";
+import axios from "axios";
 const { exec } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const express = require("express");
 const bodyParser = require("body-parser");
+const rateLimit = require("express-rate-limit");
+const slowDown = require("express-slow-down");
 const app = express();
 const port = 8080;
 const writeFile = promisify(fs.writeFile);
 
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+});
+
+const speedLimiter = slowDown({
+  windowMs: 15 * 60 * 1000,
+  delayAfter: 1,
+  delayMs: () => 2000,
+});
+
+app.use(speedLimiter);
+app.use(limiter);
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, "public")));
+app.use((req: Request, res: Response, next: NextFunction) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept"
+  );
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+  next();
+});
 
 dotenv.config();
 
@@ -31,13 +58,23 @@ const storageGoogle = new Storage({
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-app.use((req: Request, res: Response, next: NextFunction) => {
+async function downloadAudioFile(url: string, outputPath: string) {
+  const response = await axios({
+    method: "get",
+    url: url,
+    responseType: "arraybuffer",
+  });
+  await writeFile(outputPath, response.data);
+}
+
+app.use((req: Request, res: Response) => {
   res.sendFile(path.join(__dirname, 'public', 'api-documentation.html'));
 });
 
-app.post("/api/ytdl", async (req: any, res: any) => {
+app.post("/api/yt", async (req: any, res: any) => {
   console.log(req.body);
   const { url } = req.body;
+
   if (!url) {
     return res.status(400).json({ error: "url is required" });
   }
@@ -46,7 +83,7 @@ app.post("/api/ytdl", async (req: any, res: any) => {
 
   exec(
     `python download_audio.py ${url} ${filePath}`,
-    async (error:any, stdout:any, stderr:any) => {
+    async (error: any, stdout: any, stderr: any) => {
       if (error) {
         console.error(`Error: ${error.message}`);
         return res.status(500).json({ error: "Failed to download audio" });
@@ -61,13 +98,10 @@ app.post("/api/ytdl", async (req: any, res: any) => {
         await storageGoogle.bucket(bucketName).upload(filePath, {
           resumable: false, // optional, set to true for large files
         });
-        await storageGoogle
-          .bucket(bucketName)
-          .file(filePath)
-          .getSignedUrl({
-            action: "read",
-            expires: "03-09-2491",
-          });
+        await storageGoogle.bucket(bucketName).file(filePath).getSignedUrl({
+          action: "read",
+          expires: "03-09-2491",
+        });
 
         const publicUrl = `https://storage.googleapis.com/${bucketName}/${filePath}`;
         console.log(`Public URL: ${publicUrl}`);
@@ -151,23 +185,24 @@ app.post(
 
 app.post(
   "/api/combine-audio",
-  upload.array("audioFilePaths", 10),
+  // upload.array("audioFilePaths", 10),
   async (req: any, res: any) => {
-    const audioFiles = req.files;
+    const { audioUrls } = req.body;
+    console.log(audioUrls);
 
-    if (!audioFiles || audioFiles.length === 0) {
-      return res.status(400).json({
-        error: "Aucun fichier audio n'a été envoyé.",
-      });
+    if (!audioUrls || !Array.isArray(audioUrls) || audioUrls.length === 0) {
+      return res
+        .status(400)
+        .json({ error: "Aucune URL d'audio n'a été fournie." });
     }
 
     try {
       const tempFilePaths: string[] = [];
 
       // Save audio buffers as temporary files
-      for (let file of audioFiles) {
+      for (let url of audioUrls) {
         const tempFilePath = path.join(__dirname, `temp_${uuidv4()}.mp3`);
-        await writeFile(tempFilePath, file.buffer);
+        await downloadAudioFile(url, tempFilePath);
         tempFilePaths.push(tempFilePath);
       }
 
@@ -189,7 +224,8 @@ app.post(
       // for (let i = 1; i < tempFilePaths.length; i++) {
       //   ffmpegCommand += `,a${i}`;
       // }
-      ffmpegCommand += ` -filter_complex "[0:a][1:a]concat=n=2:v=0:a=1[out]" -map "[out]" ${outputFilename}`;
+      // ffmpegCommand += ` -filter_complex "[0:a][1:a]concat=n=2:v=0:a=1[out]" -map "[out]" ${outputFilename}`;
+      ffmpegCommand += ` -filter_complex "concat=n=${tempFilePaths.length}:v=0:a=1[out]" -map "[out]" ${outputFilename}`;
 
       console.log(ffmpegCommand);
 
@@ -207,9 +243,6 @@ app.post(
         try {
           const bucketName = "ai-multi-track";
           console.log(outputFilename);
-          // const outputFileBuffer = await fs.promises.readFile(outputFilename);
-          // Logic to upload output file (e.g., to S3 or similar service)
-          // const uploadedFile = await utapi.uploadFiles(outputFileBuffer);
           await storageGoogle.bucket(bucketName).upload(outputFilename, {
             resumable: false, // optional, set to true for large files
           });
@@ -223,10 +256,8 @@ app.post(
 
           const publicUrl = `https://storage.googleapis.com/${bucketName}/${outputFilename}`;
           console.log(`Public URL: ${publicUrl}`);
-
           // Return the URL of the uploaded file
           res.status(200).json({ audioUrl: publicUrl });
-
           // Clean up the final output file after response
           fs.unlinkSync(outputFilename);
         } catch (uploadError) {
