@@ -7,6 +7,7 @@ import { Storage } from "@google-cloud/storage";
 import { downloadAudioFile } from '../utils/utils';
 
 const router = express.Router();
+const auth = require('../middleware/auth');
 
 const storageGoogle = new Storage({
   keyFilename: path.join(
@@ -17,7 +18,7 @@ const storageGoogle = new Storage({
   ),
 });
 
-router.post("/", async (req, res) => {
+router.post("/", auth, async (req, res) => {
   const { audioUrls } = req.body;
   console.log(audioUrls);
 

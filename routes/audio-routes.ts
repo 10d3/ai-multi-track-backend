@@ -7,8 +7,9 @@ import fs from 'fs';
 const router = express.Router();
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
+const auth = require('../middleware/auth');
 
-router.post("/", upload.single("videoFile"), async (req, res) => {
+router.post("/", auth, upload.single("videoFile"), async (req, res) => {
   const file = req.file;
 
   if (!file) {
