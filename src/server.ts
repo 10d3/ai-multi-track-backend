@@ -30,7 +30,7 @@ app.use('/api/refresh-token', refreshTokenRoutes);
 
 app.use((req, res) => {
   console.log("Headers received:", req.headers);
-  res.sendFile(path.join(__dirname, 'public', 'api-documentation.html'));
+  res.sendFile(path.join(__dirname, '../public', 'api-documentation.html'));
 });
 
 app.listen(port, () => {

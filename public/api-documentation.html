@@ -4,54 +4,80 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SayItAI API Documentation</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap');
         body {
             font-family: 'Poppins', sans-serif;
+            background-color: #000000;
+            color: #ffffff;
+        }
+        .content-section {
+            background-color: rgba(255, 255, 255, 0.1);
+            box-shadow: 0 4px 6px rgba(255, 255, 255, 0.1);
         }
     </style>
 </head>
-<body class="bg-gray-100 w-[100vw] h-[100vh] flex items-center justify-center">
-    <div class=" mx-auto px-4 py-8 w-[50%] h-[50%]">
+<body class="w-full min-h-screen flex items-center justify-center">
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
         <header class="text-center mb-12">
-            <h1 class="text-4xl font-bold text-indigo-700">SayItAI API</h1>
-            <p class="text-xl text-gray-600 mt-2">Welcome to the SayItAI API</p>
+            <h1 class="text-4xl font-bold text-indigo-400">SayItAI API</h1>
+            <p class="text-xl text-gray-300 mt-2">Welcome to the SayItAI API</p>
+            <p class="text-gray-400 mt-2">All routes are available and need authentication except for /api/login and /api/sign-up</p>
+            <p class="text-gray-400 mt-2">Please signup if you don't have an account yet or login if you already have an account to receive your token</p>
+            <p class="text-gray-400 mt-2">The token is used to authenticate all routes</p>
+            <p class="text-gray-400 mt-2">If you have problems with the API, please contact us at <a href="mailto:ffast2000@gmail.com" class="text-indigo-400">ffast2000@gmail.com</a></p>
         </header>
 
-        <main class="max-w-4xl flex flex-col items-center justify-center">
-            <section class="bg-white rounded-lg shadow-md p-6 mb-8">
-                <h2 class="text-2xl font-semibold text-indigo-600 mb-4">Available Routes</h2>
-                <ul class="list-disc list-inside space-y-2 text-gray-700">
+        <main class="space-y-8">
+            <section class="content-section rounded-lg p-6">
+                <h2 class="text-2xl font-semibold text-indigo-400 mb-4">Available Routes</h2>
+                <ul class="list-disc list-inside space-y-2 text-gray-300">
+                    <li>/api/login</li>
+                    <li>/api/sign-up</li>
                     <li>/api/isolate-speakers</li>
                     <li>/api/combine-audio</li>
                     <li>/api/ytdl</li>
                 </ul>
             </section>
 
-            <section class="bg-white rounded-lg shadow-md p-6">
-                <h2 class="text-2xl font-semibold text-indigo-600 mb-4">Route Parameters</h2>
+            <section class="content-section rounded-lg p-6">
+                <h2 class="text-2xl font-semibold text-indigo-400 mb-4">Route Parameters</h2>
 
-                <div class="space-y-6 grid grid-cols-3">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     <div>
-                        <h3 class="text-xl font-medium text-indigo-500 mb-2">/api/isolate-speakers</h3>
-                        <ul class="list-disc list-inside space-y-1 text-gray-700">
+                        <h3 class="text-xl font-medium text-indigo-300 mb-2">/api/login</h3>
+                        <ul class="list-disc list-inside space-y-1 text-gray-300">
+                            <li><span class="font-semibold">email:</span> string</li>
+                            <li><span class="font-semibold">password:</span> string</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-medium text-indigo-300 mb-2">/api/sign-up</h3>
+                        <ul class="list-disc list-inside space-y-1 text-gray-300">
+                            <li><span class="font-semibold">name:</span> string</li>
+                            <li><span class="font-semibold">email:</span> string</li>
+                            <li><span class="font-semibold">password:</span> string</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-medium text-indigo-300 mb-2">/api/isolate-speakers</h3>
+                        <ul class="list-disc list-inside space-y-1 text-gray-300">
                             <li><span class="font-semibold">transcription:</span> string</li>
                             <li><span class="font-semibold">audioFilePath:</span> string | audioFile</li>
                         </ul>
                     </div>
-
                     <div>
-                        <h3 class="text-xl font-medium text-indigo-500 mb-2">/api/combine-audio</h3>
-                        <ul class="list-disc list-inside space-y-1 text-gray-700">
-                            <li><span class="font-semibold">audioFilePaths:</span> array of string | audioFiles</li>
-                            <li><span class="font-semibold">outputFilePath:</span> string</li>
+                        <h3 class="text-xl font-medium text-indigo-300 mb-2">/api/combine-audio</h3>
+                        <ul class="list-disc list-inside space-y-1 text-gray-300">
+                            <li><span class="font-semibold">audioUrls:</span> array of string | audioFiles</li>
+                            <li><span class="font-semibold">transcription:</span> string[]</li>
+                            <li><span class="font-semibold">originalAudioUrl:</span> string</li>
                         </ul>
                     </div>
-
                     <div>
-                        <h3 class="text-xl font-medium text-indigo-500 mb-2">/api/ytdl</h3>
-                        <ul class="list-disc list-inside space-y-1 text-gray-700">
+                        <h3 class="text-xl font-medium text-indigo-300 mb-2">/api/ytdl</h3>
+                        <ul class="list-disc list-inside space-y-1 text-gray-300">
                             <li><span class="font-semibold">url:</span> string</li>
                         </ul>
                     </div>
