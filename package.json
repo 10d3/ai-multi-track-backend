@@ -1,6 +1,6 @@
 {
   "name": "combine-backend",
-  "module": "server.ts",
+  "module": "./src/server.ts",
   "type": "module",
   "devDependencies": {
     "@types/bun": "latest"
@@ -32,6 +32,7 @@
   "scripts": {
     "install-python-deps": "pip install -r requirements.txt",
     "postinstall": "bun run install-python-deps",
-    "migrate": "prisma migrate dev"
+    "migrate": "prisma migrate dev",
+    "dev": "bun run --hot src/server.ts"
   }
 }

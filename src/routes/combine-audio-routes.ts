@@ -61,7 +61,9 @@ router.post("/", auth, async (req, res) => {
         const backgroundSegment = path.join(__dirname, `background_${i}.mp3`);
         const ffmpegExtractCmd = `ffmpeg -i ${mp3Path} -ss ${
           previousEnd / 1000
-        } -to ${start / 1000} -acodec libmp3lame ${backgroundSegment}`;
+        } -to ${
+          (start - 150 > previousEnd ? start - 150 : previousEnd + 1) / 1000
+        } -acodec libmp3lame ${backgroundSegment}`;
         execSync(ffmpegExtractCmd);
         combinedSegments.push(backgroundSegment);
       }
