@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SayItAI API Documentation</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap');
+        body {
+            font-family: 'Poppins', sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 w-[100vw] h-[100vh] flex items-center justify-center">
+    <div class=" mx-auto px-4 py-8 w-[50%] h-[50%]">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl font-bold text-indigo-700">SayItAI API</h1>
+            <p class="text-xl text-gray-600 mt-2">Welcome to the SayItAI API</p>
+        </header>
+
+        <main class="max-w-4xl flex flex-col items-center justify-center">
+            <section class="bg-white rounded-lg shadow-md p-6 mb-8">
+                <h2 class="text-2xl font-semibold text-indigo-600 mb-4">Available Routes</h2>
+                <ul class="list-disc list-inside space-y-2 text-gray-700">
+                    <li>/api/isolate-speakers</li>
+                    <li>/api/combine-audio</li>
+                    <li>/api/ytdl</li>
+                </ul>
+            </section>
+
+            <section class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-2xl font-semibold text-indigo-600 mb-4">Route Parameters</h2>
+
+                <div class="space-y-6 grid grid-cols-3">
+                    <div>
+                        <h3 class="text-xl font-medium text-indigo-500 mb-2">/api/isolate-speakers</h3>
+                        <ul class="list-disc list-inside space-y-1 text-gray-700">
+                            <li><span class="font-semibold">transcription:</span> string</li>
+                            <li><span class="font-semibold">audioFilePath:</span> string | audioFile</li>
+                        </ul>
+                    </div>
+
+                    <div>
+                        <h3 class="text-xl font-medium text-indigo-500 mb-2">/api/combine-audio</h3>
+                        <ul class="list-disc list-inside space-y-1 text-gray-700">
+                            <li><span class="font-semibold">audioFilePaths:</span> array of string | audioFiles</li>
+                            <li><span class="font-semibold">outputFilePath:</span> string</li>
+                        </ul>
+                    </div>
+
+                    <div>
+                        <h3 class="text-xl font-medium text-indigo-500 mb-2">/api/ytdl</h3>
+                        <ul class="list-disc list-inside space-y-1 text-gray-700">
+                            <li><span class="font-semibold">url:</span> string</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="mt-12 text-center text-gray-500">
+            <p>&copy; 2024 SayItAI API. All rights reserved.</p>
+        </footer>
+    </div>
+</body>
+</html>

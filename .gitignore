@@ -174,12 +174,13 @@ dist
 # Finder (MacOS) folder config
 .DS_Store
 
-.public
-./public
-public
+# .public
+# ./public
+# public
 
 *.mp3
 
-config/*.json
-
+.src/config/*.json
+src/config/*.json
+endless-bolt-430416-h3-e0a89a12879b.json
 env
