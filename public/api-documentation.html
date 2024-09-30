@@ -22,7 +22,7 @@
     <div class="container mx-auto px-4 py-8 max-w-4xl">
         <header class="text-center mb-12">
             <h1 class="text-4xl font-bold text-indigo-400">SayItAI API</h1>
-            <p class="text-xl text-gray-300 mt-2">Welcome to the SayItAI API</p>
+            <h3 class="text-2xl text-gray-300 mt-2">Welcome to the SayItAI API</h3>
             <p class="text-gray-400 mt-2">All routes are available and need authentication except for /api/login and /api/sign-up</p>
             <p class="text-gray-400 mt-2">Please signup if you don't have an account yet or login if you already have an account to receive your token</p>
             <p class="text-gray-400 mt-2">The token is used to authenticate all routes</p>
@@ -73,6 +73,42 @@
                             <li><span class="font-semibold">audioUrls:</span> array of string | audioFiles</li>
                             <li><span class="font-semibold">transcription:</span> string[]</li>
                             <li><span class="font-semibold">originalAudioUrl:</span> string</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-medium text-indigo-300 mb-2">/api/ytdl</h3>
+                        <ul class="list-disc list-inside space-y-1 text-gray-300">
+                            <li><span class="font-semibold">url:</span> string</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+            <section class="content-section rounded-lg p-6">
+                <h2 class="text-2xl font-semibold text-indigo-400 mb-4">Response Body</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div>
+                        <h3 class="text-xl font-medium text-indigo-300 mb-2">/api/login</h3>
+                        <ul class="list-disc list-inside space-y-1 text-gray-300">
+                            <li><span class="font-semibold">token:</span> string</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-medium text-indigo-300 mb-2">/api/sign-up</h3>
+                        <ul class="list-disc list-inside space-y-1 text-gray-300">
+                            <li><span class="font-semibold">token:</span> string</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-medium text-indigo-300 mb-2">/api/isolate-speakers</h3>
+                        <ul class="list-disc list-inside space-y-1 text-gray-300">
+                            <li><span class="font-semibold">transcription:</span> string</li>
+                            <li><span class="font-semibold">speaker:</span> string</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-medium text-indigo-300 mb-2">/api/combine-audio</h3>
+                        <ul class="list-disc list-inside space-y-1 text-gray-300">
+                            <li><span class="font-semibold">combinedAudioUrl:</span> string</li>
                         </ul>
                     </div>
                     <div>

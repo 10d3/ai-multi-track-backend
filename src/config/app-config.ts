@@ -19,14 +19,14 @@ export function configureApp(app: Application) {
   });
 
   const corsOptions = {
-    origin: 'http://localhost:3000', // Allow this specific origin
+    origin: '*', // Allow this specific origin
     methods: 'GET,POST,PUT,DELETE', // Allowed methods
     allowedHeaders: ['Content-Type', 'Authorization'], // Allowed headers, including 'Authorization'
   };
 
   app.use(cors(corsOptions));
   app.use(speedLimiter);
-  app.use(limiter);
+  // app.use(limiter);
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     res.header("Access-Control-Allow-Origin", "*");
