@@ -7,22 +7,23 @@ import { exec } from "child_process";
 import { storageGoogle } from "./queue";
 import { v4 as uuidv4 } from "uuid";
 import { downloadAudioFile } from "./utils";
-import dotenv from 'dotenv';
+import dotenv from "dotenv";
 
 dotenv.config();
+
 // Promisify exec for async/await usage
 const execAsync = promisify(exec);
 
 // Define constants
 const BATCH_SIZE = 5;
-const TEMP_DIR = path.resolve(process.cwd(), "temp"); // Using absolute path resolution
+const TEMP_DIR = path.resolve(process.cwd(), "temp");
 const BUCKET_NAME = "ai-multi-track";
 const SIGNED_URL_EXPIRY = "03-09-2491";
 
 // Define interfaces for job data
 interface Transcript {
-  start: number; // Assuming start is a number representing milliseconds
-  end?: number; // Optional end time
+  start: number;
+  end?: number;
 }
 
 interface JobData {
@@ -40,21 +41,23 @@ class AudioProcessor {
     this.tempDirs = new Set();
   }
 
+  async getAudioDuration(filePath: string): Promise<number> {
+    const { stdout } = await execAsync(
+      `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${filePath}"`
+    );
+    return parseFloat(stdout);
+  }
+
   async init(): Promise<void> {
-    // Ensure temp directory exists at startup
     await fs.mkdir(TEMP_DIR, { recursive: true });
     console.log("Temporary directory created/verified at:", TEMP_DIR);
   }
 
   async cleanup(): Promise<void> {
     console.log("Starting cleanup...");
-    // Cleanup all temporary files and directories
     const fileCleanup = Array.from(this.tempFilePaths).map(async (file) => {
       try {
-        const exists = await fs
-          .access(file)
-          .then(() => true)
-          .catch(() => false);
+        const exists = await fs.access(file).then(() => true).catch(() => false);
         if (exists) {
           await fs.unlink(file);
           console.log("Cleaned up file:", file);
@@ -66,10 +69,7 @@ class AudioProcessor {
 
     const dirCleanup = Array.from(this.tempDirs).map(async (dir) => {
       try {
-        const exists = await fs
-          .access(dir)
-          .then(() => true)
-          .catch(() => false);
+        const exists = await fs.access(dir).then(() => true).catch(() => false);
         if (exists) {
           await fs.rm(dir, { recursive: true, force: true });
           console.log("Cleaned up directory:", dir);
@@ -93,7 +93,6 @@ class AudioProcessor {
 
   async verifyFile(filePath: string): Promise<boolean> {
     try {
-      console.log("Verifying file:", filePath);
       await fs.access(filePath);
       const stats = await fs.stat(filePath);
       if (!stats.isFile()) {
@@ -102,7 +101,6 @@ class AudioProcessor {
       if (stats.size === 0) {
         throw new Error(`Empty file: ${filePath}`);
       }
-      console.log("File verified successfully:", filePath, "Size:", stats.size);
       return true;
     } catch (error) {
       console.error(`File verification failed for ${filePath}:`, error);
@@ -115,7 +113,6 @@ class AudioProcessor {
     const outputPath = await this.createTempPath("converted", "wav");
 
     try {
-      console.log("Converting audio:", inputPath, "to:", outputPath);
       await execAsync(`ffmpeg -i "${inputPath}" -y "${outputPath}"`);
       await this.verifyFile(outputPath);
       return outputPath;
@@ -126,27 +123,45 @@ class AudioProcessor {
   }
 
   async processTTSFiles(audioUrls: string[]): Promise<string[]> {
-    console.log("Processing TTS files...", audioUrls);
     const convertedPaths: string[] = [];
 
-    for (const [index, url] of audioUrls.entries()) {
-      console.log(`Processing TTS file ${index + 1}/${audioUrls.length}`);
+    for (const url of audioUrls) {
       const tempPath = await this.createTempPath("temp", "mp3");
       await downloadAudioFile(url, tempPath);
       await this.verifyFile(tempPath);
 
       const wavPath = await this.convertAudioToWav(tempPath);
-      convertedPaths.push(wavPath);
+      convertedPaths .push(wavPath);
 
-      // Remove the temporary MP3
       await fs.unlink(tempPath);
     }
 
     return convertedPaths;
   }
 
+  async cleanBackgroundTrack(inputPath: string): Promise<string> {
+    const outputPath = await this.createTempPath("cleaned_bg", "wav");
+
+    try {
+      const ffmpegCmd = `ffmpeg -i "${inputPath}" -af "
+        highpass=f=50,
+        lowpass=f=15000,
+        anlmdn=s=7:p=0.002:r=0.002:m=15:b=5,
+        equalizer=f=200:t=q:w=1:g=-2,
+        equalizer=f=1000:t=q:w=1:g=-1,
+        compand=attacks=0.3:points=-70/-90|-24/-12|0/-6|20/-3:gain=3
+      " -y "${outputPath}"`;
+
+      await execAsync(ffmpegCmd.replace(/\s+/g, " "));
+      await this.verifyFile(outputPath);
+      return outputPath;
+    } catch (error) {
+      console.error("Background cleaning failed:", error);
+      throw new Error(`Background cleaning failed: ${error}`);
+    }
+  }
+
   async separateOriginalAudio(originalAudioUrl: string): Promise<string> {
-    console.log("Separating original audio:", originalAudioUrl);
     const originalPath = await this.createTempPath("original", "mp3");
     await downloadAudioFile(originalAudioUrl, originalPath);
     await this.verifyFile(originalPath);
@@ -183,108 +198,90 @@ class AudioProcessor {
     }
   }
 
-  async combineBatchWithBackground(
-    batchFiles: string[],
-    currentBgTrack: string,
-    transcriptSlice: Transcript[],
-    startIndex: number
+  async combineAllSpeechWithBackground(
+    speechFiles: string[],
+    backgroundTrack: string,
+    transcript: Transcript[]
   ): Promise<string> {
-    console.log("Combining batch with background:", {
-      batchFiles,
-      currentBgTrack,
-      startIndex,
-    });
+    await this.verifyFile(backgroundTrack);
+    await Promise.all(speechFiles.map((file) => this.verifyFile(file)));
 
-    await this.verifyFile(currentBgTrack);
-    await Promise.all(batchFiles.map((file) => this.verifyFile(file)));
+    const bgDuration = await this.getAudioDuration(backgroundTrack);
 
-    const filterComplexParts: string[] = [];
-    const inputFiles = [`-i "${currentBgTrack}"`];
-
-    inputFiles.push(...batchFiles.map((file) => `-i "${file}"`));
-
-    batchFiles.forEach((file, index) => {
-      const startTime = transcriptSlice[index]?.start / 1000 || 0;
-
-      // Apply delay to each speech track
-      filterComplexParts.push(
-        `[${index + 1}:a]adelay=${Math.round(startTime * 1000)}|${Math.round(
-          startTime * 1000
-        )}[delayed${index}];`
-      );
-
-      // Compress the audio track to manage dynamic range
-      filterComplexParts.push(
-        `[delayed${index}]acompressor=threshold=-20dB:ratio=4:attack=5:release=50[compressed${index}];`
-      );
-
-      const previousBg = index === 0 ? "0:a" : `bg${index - 1}`;
-
-      // Mix the compressed speech with the background track
-      filterComplexParts.push(
-        `[${previousBg}][compressed${index}]amix=inputs=2:duration=longest:dropout_transition=2,volume=1.2[bg${index}];`
-      );
-    });
-
-    const finalStreamLabel = `bg${batchFiles.length - 1}`;
-    filterComplexParts.push(
-      `[${finalStreamLabel}]loudnorm=I=-16:TP=-1.5:LRA=11[out]`
+    const processedBgPath = await this.createTempPath("processed_bg", "wav");
+    await execAsync(
+      `ffmpeg -i "${backgroundTrack}" -af "volume=0.3" -ar 44100 -y "${processedBgPath}"`
     );
 
-    const filterComplex = filterComplexParts.join(" ");
-    const outputPath = await this.createTempPath("batch", "wav");
-    const ffmpegCmd = `ffmpeg ${inputFiles.join(
-      " "
-    )} -filter_complex "${filterComplex}" -map "[out]" -y "${outputPath}"`;
+    let filterComplex = ``;
+    let inputs = `-i "${processedBgPath}" `;
+    let overlays = ``;
 
-    try {
-      console.log("Executing FFmpeg command for batch");
-      console.log("Filter Complex:", filterComplex);
-      await execAsync(ffmpegCmd);
-      await this.verifyFile(outputPath);
-      return outputPath;
-    } catch (error) {
-      console.error("FFmpeg command failed:", error);
-      throw new Error(`FFmpeg command failed: ${error}`);
+    for (let i = 0; i < transcript.length; i++) {
+      const startTime = Math.round(transcript[i].start);
+      const endTime = Math.round(transcript[i].end);
+      const desiredDuration = (endTime - startTime) / 1000;
+
+      inputs += `-i "${speechFiles[i]}" `;
+
+      const actualDuration = await this.getAudioDuration(speechFiles[i]);
+      const tempoFactor = actualDuration / desiredDuration;
+
+      filterComplex += `[${
+        i + 1
+      }:a]atempo=${tempoFactor},atrim=0:${desiredDuration},asetpts=PTS-STARTPTS,volume=3[adj${i}];`;
+      filterComplex += `[adj${i}]adelay=${startTime}|${startTime}[s${i}];`;
     }
+
+    filterComplex += `[0:a]apad[bg];`;
+    overlays += `[bg]`;
+
+    for (let i = 0; i < transcript.length; i++) {
+      overlays += `[s${i}]`;
+    }
+    filterComplex += `${overlays}amix=inputs=${
+      transcript.length + 1
+    }:dropout_transition=0:normalize=0[mixed];`;
+
+    filterComplex += `[mixed]dynaudnorm=p=0.95:m=15,compand=attacks=0:points=-80/-80|-50/-50|-40/-30|-30/-20|-20/-10|-10/-5|-5/0|0/0[out]`;
+
+    const finalOutputPath = await this.createTempPath("final_output", "wav");
+    const ffmpegCmd = `ffmpeg ${inputs} -filter_complex "${filterComplex}" -map "[out]" -t ${bgDuration} -y "${finalOutputPath}"`;
+
+    await execAsync(ffmpegCmd);
+    return finalOutputPath;
   }
 
   async uploadToStorage(filePath: string): Promise<string> {
     try {
-      console.log("Starting upload to storage:", filePath);
       await this.verifyFile(filePath);
 
       const bucket = storageGoogle.bucket(BUCKET_NAME);
       const filename = path.basename(filePath);
       const file = bucket.file(filename);
 
-      // Upload using streams with explicit error handling
-      await new Promise<void>((resolve, reject) => {
-        const readStream = createReadStream(filePath);
-        const writeStream = file.createWriteStream({
-          resumable: false,
-          validation: "md5",
-        });
-
-        readStream.on("error", (error) => {
-          console.error("Read stream error:", error);
-          reject(new Error(`Read stream error: ${error.message}`));
-        });
-
-        writeStream.on("error", (error) => {
-          console.error("Write stream error:", error);
-          reject(new Error(`Write stream error: ${error.message}`));
-        });
-
-        writeStream.on("finish", () => {
-          console.log("Upload completed successfully");
-          resolve();
-        });
-
-        readStream.pipe(writeStream);
+      const readStream = createReadStream(filePath);
+      const writeStream = file.createWriteStream({
+        resumable: false,
+        validation: "md5",
       });
 
-      // Return the public URL
+      readStream.on("error", (error) => {
+        console.error("Read stream error:", error);
+        throw new Error(`Read stream error: ${error.message}`);
+      });
+
+      writeStream.on("error", (error) => {
+        console.error("Write stream error:", error);
+        throw new Error(`Write stream error: ${error.message}`);
+      });
+
+      writeStream.on("finish", () => {
+        console.log("Upload completed successfully");
+      });
+
+      readStream.pipe(writeStream);
+
       const [url] = await file.getSignedUrl({
         action: "read",
         expires: SIGNED_URL_EXPIRY,
@@ -298,38 +295,52 @@ class AudioProcessor {
   }
 }
 
-// Worker implementation
 const worker = new Worker<JobData>(
   "audio-processing",
   async (job) => {
     const audioProcessor = new AudioProcessor();
     await audioProcessor.init();
 
+    const totalSteps = job.data.audioUrls.length + 2; // TTS files + separate original + combine
+    let completedSteps = 0;
+    const startTime = Date.now();
+    let stepTimes: number[] = [];
+
+    const recordStepTime = () => {
+      const currentTime = Date.now();
+      const elapsedTime = currentTime - startTime;
+      stepTimes.push(elapsedTime);
+
+      const averageTimePerStep = stepTimes.reduce((a, b) => a + b, 0) / stepTimes.length;
+      const remainingSteps = totalSteps - completedSteps;
+      const estimatedRemainingTime = averageTimePerStep * remainingSteps;
+
+      console.log(`Estimated remaining time: ${Math.round(estimatedRemainingTime / 1000)} seconds`);
+    };
+
     try {
-      const ttsConvertedPaths = await audioProcessor.processTTSFiles(
-        job.data.audioUrls
+      const ttsConvertedPaths = await audioProcessor.processTTSFiles(job.data.audioUrls);
+      completedSteps++;
+      await job.updateProgress(Math.round((completedSteps / totalSteps) * 100));
+      recordStepTime();
+
+      const separatedPath = await audioProcessor.separateOriginalAudio(job.data.originalAudioUrl);
+      completedSteps++;
+      await job.updateProgress(Math.round((completedSteps / totalSteps) * 100));
+      recordStepTime();
+
+      const finalOutputPath = await audioProcessor.combineAllSpeechWithBackground(
+        ttsConvertedPaths,
+        separatedPath,
+        job.data.transcript
       );
-      const separatedPath = await audioProcessor.separateOriginalAudio(
-        job.data.originalAudioUrl
-      );
+      completedSteps++;
+      await job.updateProgress(Math.round((completedSteps / totalSteps) * 100));
+      recordStepTime();
 
-      const results = [];
-      for (let i = 0; i < ttsConvertedPaths.length; i += BATCH_SIZE) {
-        const batchFiles = ttsConvertedPaths.slice(i, i + BATCH_SIZE);
-        const transcriptSlice = job.data.transcript.slice(i, i + BATCH_SIZE);
-        const combinedPath = await audioProcessor.combineBatchWithBackground(
-          batchFiles,
-          separatedPath,
-          transcriptSlice,
-          i
-        );
-
-        const uploadedUrl = await audioProcessor.uploadToStorage(combinedPath);
-        results.push(uploadedUrl);
-      }
-
-      console.log("All audio processed successfully", results);
-      return results;
+      const finalUrl = await audioProcessor.uploadToStorage(finalOutputPath);
+      console.log("Audio processing completed successfully", finalUrl);
+      return finalUrl;
     } catch (error) {
       console.error("Error processing audio:", error);
       throw new Error(`Error processing audio: ${error}`);
@@ -339,12 +350,16 @@ const worker = new Worker<JobData>(
   },
   {
     connection: {
-      host: process.env.WORKER_URL, // Replace with your Redis host
+      host: process.env.WORKER_URL,
       port: Number(process.env.WORKER_PORT),
     },
     concurrency: 5,
   }
 );
+
+worker.on("progress", (job, progress) => {
+  console.log(`Job ${job.id} progress: ${progress}%`);
+});
 
 worker.on("completed", (job) => {
   console.log(`Job ${job.id} completed successfully!`);

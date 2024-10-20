@@ -33,7 +33,7 @@
   },
   "scripts": {
     "migrate": "prisma migrate dev",
-    "dev": "bun run --hot src/server.ts && bun run --hot src/utils/worker.ts",
+    "dev": "bun run --hot src/server.ts",
     "worker":"bun run --hot src/utils/worker.ts"
   }
 }
