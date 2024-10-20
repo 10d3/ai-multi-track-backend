@@ -17,7 +17,7 @@ const storageGoogle = new Storage({
   ),
 });
 
-router.post("/", auth, async (req, res) => {
+router.post("/", async (req, res) => {
   console.log(req.body);
   const { url } = req.body;
 
@@ -28,7 +28,7 @@ router.post("/", auth, async (req, res) => {
   const bucketName = "ai-multi-track";
 
   exec(
-    `python ./src/download_audio.py ${url} ${filePath}`,
+    `python ./src/script/download_audio.py ${url} ${filePath}`,
     async (error, stdout, stderr) => {
       if (error) {
         console.error(`Error: ${error.message}`);

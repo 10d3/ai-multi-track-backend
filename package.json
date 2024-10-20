@@ -15,6 +15,7 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.7",
+    "@types/mime-types": "^2.1.4",
     "@types/multer": "^1.4.12",
     "@types/uuid": "^10.0.0",
     "axios": "^1.7.7",
@@ -25,14 +26,14 @@
     "express-rate-limit": "^7.4.0",
     "express-slow-down": "^2.0.3",
     "jsonwebtoken": "^9.0.2",
+    "mime-types": "^2.1.35",
     "multer": "^1.4.5-lts.1",
     "uploadthing": "^7.0.2",
     "uuid": "^10.0.0"
   },
   "scripts": {
-    "install-python-deps": "pip install -r requirements.txt",
-    "postinstall": "bun run install-python-deps",
     "migrate": "prisma migrate dev",
-    "dev": "bun run --hot src/server.ts"
+    "dev": "bun run --hot src/server.ts && bun run --hot src/utils/worker.ts",
+    "worker":"bun run --hot src/utils/worker.ts"
   }
 }
