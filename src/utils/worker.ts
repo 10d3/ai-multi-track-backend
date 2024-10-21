@@ -219,7 +219,7 @@ class AudioProcessor {
 
     for (let i = 0; i < transcript.length; i++) {
       const startTime = Math.round(transcript[i].start);
-      const endTime = Math.round(transcript[i].end);
+      const endTime = Math.round(transcript[i].end as number);
       const desiredDuration = (endTime - startTime) / 1000;
 
       inputs += `-i "${speechFiles[i]}" `;
