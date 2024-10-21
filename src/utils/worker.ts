@@ -1,4 +1,4 @@
-import { Worker, Job } from "bullmq";
+import { Worker } from "bullmq";
 import fs from "fs/promises";
 import { createReadStream } from "fs";
 import path from "path";
@@ -17,7 +17,7 @@ const execAsync = promisify(exec);
 // Define constants
 const BATCH_SIZE = 5;
 const TEMP_DIR = path.resolve(process.cwd(), "temp");
-const BUCKET_NAME = "ai-multi-track";
+const BUCKET_NAME = process.env.BUCKET_NAME as string;
 const SIGNED_URL_EXPIRY = "03-09-2491";
 
 // Define interfaces for job data
@@ -57,7 +57,10 @@ class AudioProcessor {
     console.log("Starting cleanup...");
     const fileCleanup = Array.from(this.tempFilePaths).map(async (file) => {
       try {
-        const exists = await fs.access(file).then(() => true).catch(() => false);
+        const exists = await fs
+          .access(file)
+          .then(() => true)
+          .catch(() => false);
         if (exists) {
           await fs.unlink(file);
           console.log("Cleaned up file:", file);
@@ -69,7 +72,10 @@ class AudioProcessor {
 
     const dirCleanup = Array.from(this.tempDirs).map(async (dir) => {
       try {
-        const exists = await fs.access(dir).then(() => true).catch(() => false);
+        const exists = await fs
+          .access(dir)
+          .then(() => true)
+          .catch(() => false);
         if (exists) {
           await fs.rm(dir, { recursive: true, force: true });
           console.log("Cleaned up directory:", dir);
@@ -131,7 +137,7 @@ class AudioProcessor {
       await this.verifyFile(tempPath);
 
       const wavPath = await this.convertAudioToWav(tempPath);
-      convertedPaths .push(wavPath);
+      convertedPaths.push(wavPath);
 
       await fs.unlink(tempPath);
     }
@@ -208,29 +214,65 @@ class AudioProcessor {
 
     const bgDuration = await this.getAudioDuration(backgroundTrack);
 
+    // Process background track
     const processedBgPath = await this.createTempPath("processed_bg", "wav");
     await execAsync(
-      `ffmpeg -i "${backgroundTrack}" -af "volume=0.3" -ar 44100 -y "${processedBgPath}"`
+      `ffmpeg -i "${backgroundTrack}" -af "volume=0.3,lowpass=f=1000" -ar 44100 -t ${bgDuration} -y "${processedBgPath}"`
+    );
+
+    // Process speech files
+    const processedSpeechFiles = await Promise.all(
+      speechFiles.map(async (file, index) => {
+        const outputPath = await this.createTempPath(
+          `processed_speech_${index}`,
+          "wav"
+        );
+        await execAsync(
+          `ffmpeg -i "${file}" -af "highpass=f=100,lowpass=f=3000,volume=2" -ar 44100 -y "${outputPath}"`
+        );
+        return outputPath;
+      })
     );
 
     let filterComplex = ``;
     let inputs = `-i "${processedBgPath}" `;
     let overlays = ``;
 
+    // Adjust timings to fit within background duration
+    const firstStart = transcript[0].start;
+    const lastEnd = transcript[transcript.length - 1].end as number;
+    const totalDuration = lastEnd - firstStart;
+    const scaleFactor = bgDuration / totalDuration;
+
     for (let i = 0; i < transcript.length; i++) {
-      const startTime = Math.round(transcript[i].start);
-      const endTime = Math.round(transcript[i].end as number);
-      const desiredDuration = (endTime - startTime) / 1000;
+      const originalStart = transcript[i].start;
+      const originalEnd = transcript[i].end as number;
 
-      inputs += `-i "${speechFiles[i]}" `;
+      // Adjust start and end times
+      const adjustedStart =
+        i === 0 ? 0 : (originalStart - firstStart) * scaleFactor;
+      const adjustedEnd =
+        i === transcript.length - 1
+          ? bgDuration
+          : (originalEnd - firstStart) * scaleFactor;
+      const adjustedDuration = adjustedEnd - adjustedStart;
 
-      const actualDuration = await this.getAudioDuration(speechFiles[i]);
-      const tempoFactor = actualDuration / desiredDuration;
+      inputs += `-i "${processedSpeechFiles[i]}" `;
+
+      const actualDuration = await this.getAudioDuration(
+        processedSpeechFiles[i]
+      );
+      let tempoFactor = actualDuration / adjustedDuration;
+
+      // Ensure tempoFactor is within the valid range (0.5 to 2)
+      tempoFactor = Math.max(0.5, Math.min(tempoFactor, 2));
 
       filterComplex += `[${
         i + 1
-      }:a]atempo=${tempoFactor},atrim=0:${desiredDuration},asetpts=PTS-STARTPTS,volume=3[adj${i}];`;
-      filterComplex += `[adj${i}]adelay=${startTime}|${startTime}[s${i}];`;
+      }:a]atempo=${tempoFactor},atrim=0:${adjustedDuration},asetpts=PTS-STARTPTS[adj${i}];`;
+      filterComplex += `[adj${i}]adelay=${Math.round(
+        adjustedStart * 1000
+      )}|${Math.round(adjustedStart * 1000)}[s${i}];`;
     }
 
     filterComplex += `[0:a]apad[bg];`;
@@ -243,12 +285,19 @@ class AudioProcessor {
       transcript.length + 1
     }:dropout_transition=0:normalize=0[mixed];`;
 
-    filterComplex += `[mixed]dynaudnorm=p=0.95:m=15,compand=attacks=0:points=-80/-80|-50/-50|-40/-30|-30/-20|-20/-10|-10/-5|-5/0|0/0[out]`;
+    // Apply audio enhancements with boosted bass
+    filterComplex +=
+      `[mixed]equalizer=f=100:t=q:w=200:g=10,` + // Boost low frequencies (100 Hz)
+      `equalizer=f=1000:t=q:w=200:g=0,` + // Keep mid frequencies neutral
+      `equalizer=f=3000:t=q:w=200:g=-2,` + // Slightly reduce high frequencies
+      `dynaudnorm=p=0.95:m=15,` + // Dynamic normalization
+      `compand=attacks=0:points=-80/-80|-50/-50|-40/-30|-30/-20|-20/-10|-10/-5|-5/0|0/0[out]`; // Compression
 
     const finalOutputPath = await this.createTempPath("final_output", "wav");
     const ffmpegCmd = `ffmpeg ${inputs} -filter_complex "${filterComplex}" -map "[out]" -t ${bgDuration} -y "${finalOutputPath}"`;
 
     await execAsync(ffmpegCmd);
+
     return finalOutputPath;
   }
 
@@ -311,29 +360,39 @@ const worker = new Worker<JobData>(
       const elapsedTime = currentTime - startTime;
       stepTimes.push(elapsedTime);
 
-      const averageTimePerStep = stepTimes.reduce((a, b) => a + b, 0) / stepTimes.length;
+      const averageTimePerStep =
+        stepTimes.reduce((a, b) => a + b, 0) / stepTimes.length;
       const remainingSteps = totalSteps - completedSteps;
       const estimatedRemainingTime = averageTimePerStep * remainingSteps;
 
-      console.log(`Estimated remaining time: ${Math.round(estimatedRemainingTime / 1000)} seconds`);
+      console.log(
+        `Estimated remaining time: ${Math.round(
+          estimatedRemainingTime / 1000
+        )} seconds`
+      );
     };
 
     try {
-      const ttsConvertedPaths = await audioProcessor.processTTSFiles(job.data.audioUrls);
-      completedSteps++;
-      await job.updateProgress(Math.round((completedSteps / totalSteps) * 100));
-      recordStepTime();
-
-      const separatedPath = await audioProcessor.separateOriginalAudio(job.data.originalAudioUrl);
-      completedSteps++;
-      await job.updateProgress(Math.round((completedSteps / totalSteps) * 100));
-      recordStepTime();
-
-      const finalOutputPath = await audioProcessor.combineAllSpeechWithBackground(
-        ttsConvertedPaths,
-        separatedPath,
-        job.data.transcript
+      const ttsConvertedPaths = await audioProcessor.processTTSFiles(
+        job.data.audioUrls
       );
+      completedSteps++;
+      await job.updateProgress(Math.round((completedSteps / totalSteps) * 100));
+      recordStepTime();
+
+      const separatedPath = await audioProcessor.separateOriginalAudio(
+        job.data.originalAudioUrl
+      );
+      completedSteps++;
+      await job.updateProgress(Math.round((completedSteps / totalSteps) * 100));
+      recordStepTime();
+
+      const finalOutputPath =
+        await audioProcessor.combineAllSpeechWithBackground(
+          ttsConvertedPaths,
+          separatedPath,
+          job.data.transcript
+        );
       completedSteps++;
       await job.updateProgress(Math.round((completedSteps / totalSteps) * 100));
       recordStepTime();

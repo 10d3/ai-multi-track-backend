@@ -24,25 +24,16 @@ router.get("/:jobId", async (req, res) => {
       ? Math.max(0, job.timestamp + job.opts.delay - Date.now())
       : 0;
 
-    // Get detailed job data
-    const jobData = {
-      id: job.id,
-      name: job.name,
-      data: job.data,
-      opts: job.opts,
-      attemptsMade: job.attemptsMade,
-      processedOn: job.processedOn,
-      finishedOn: job.finishedOn,
-      timestamp: job.timestamp,
-    };
+    // Get detailed job data, excluding the transcript
+    const { transcript, ...jobData } = job.data; // Exclude transcript
 
     // Get the job's result or error
     let result = null;
     let error = null;
 
-    if (state === 'completed') {
+    if (state === "completed") {
       result = job.returnvalue;
-    } else if (state === 'failed') {
+    } else if (state === "failed") {
       error = job.failedReason;
     }
 
@@ -57,7 +48,9 @@ router.get("/:jobId", async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching job status:", error);
-    res.status(500).json({ error: "Failed to fetch job status", details: error });
+    res
+      .status(500)
+      .json({ error: "Failed to fetch job status", details: error });
   }
 });
 
