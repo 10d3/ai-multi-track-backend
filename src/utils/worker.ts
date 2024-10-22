@@ -8,6 +8,7 @@ import { storageGoogle } from "./queue";
 import { v4 as uuidv4 } from "uuid";
 import { downloadAudioFile } from "./utils";
 import dotenv from "dotenv";
+import axios from "axios";
 
 dotenv.config();
 
@@ -23,13 +24,16 @@ const SIGNED_URL_EXPIRY = "03-09-2491";
 // Define interfaces for job data
 interface Transcript {
   start: number;
-  end?: number;
+  end: number;
+  text: string;
 }
 
 interface JobData {
   audioUrls: string[];
   transcript: Transcript[];
   originalAudioUrl: string;
+  email: string;
+  language: string;
 }
 
 class AudioProcessor {
@@ -420,8 +424,31 @@ worker.on("progress", (job, progress) => {
   console.log(`Job ${job.id} progress: ${progress}%`);
 });
 
-worker.on("completed", (job) => {
+worker.on("completed", async (job) => {
   console.log(`Job ${job.id} completed successfully!`);
+  const email = job.data.email;
+  const transcript = job.data.transcript;
+  const language = job.data.language;
+  const title =
+    transcript.length > 0
+      ? transcript[0].text.split(" ").slice(0, 5).join(" ")
+      : "";
+
+  try {
+    const response = await axios.post(
+      "http://localhost:3000/api/finish-job-emailing", // or your live URL
+      {
+        isCompleded: true,
+        email,
+        jobId: job.id,
+        title,
+        language,
+      }
+    );
+    console.log("API notified successfully:", response.data);
+  } catch (error) {
+    console.error(`Error notifying API for job ${job.id}:`, error);
+  }
 });
 
 worker.on("failed", (job, err) => {

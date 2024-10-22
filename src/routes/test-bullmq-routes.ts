@@ -7,7 +7,7 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 
 router.post('/', async (req, res) => {
-  const { audioUrls, transcript, originalAudioUrl } = req.body;
+  const { audioUrls, transcript, originalAudioUrl, email, language } = req.body;
 
   if (!audioUrls || !Array.isArray(audioUrls) || audioUrls.length === 0) {
     return res.status(400).json({ error: "Aucune URL d'audio n'a été fournie." });
@@ -18,7 +18,9 @@ router.post('/', async (req, res) => {
     const job = await audioProcessingQueue.add('processAudio', {
       audioUrls,
       transcript,
-      originalAudioUrl
+      originalAudioUrl,
+      email,
+      language
     });
 
     console.log(job.id);

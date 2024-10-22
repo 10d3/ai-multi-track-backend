@@ -20,9 +20,10 @@ router.get("/:jobId", async (req, res) => {
     const progress = job.progress || 0;
 
     // Calculate remaining time (if job is delayed)
-    const remainingTime = job.opts.delay
-      ? Math.max(0, job.timestamp + job.opts.delay - Date.now())
-      : 0;
+    const remainingTime =
+      job.opts && job.opts.delay && job.timestamp
+        ? Math.max(0, job.timestamp + job.opts.delay - Date.now())
+        : 0;
 
     // Get detailed job data, excluding the transcript
     const { transcript, ...jobData } = job.data; // Exclude transcript
@@ -37,7 +38,15 @@ router.get("/:jobId", async (req, res) => {
       error = job.failedReason;
     }
 
-    // Respond with detailed job information
+    // Create a title from the first five words of the transcript
+    console.log("Transcript value:", transcript);
+    console.log("Transcript type:", typeof transcript);
+    const title =
+      typeof transcript === "string"
+        ? transcript.split(" ").slice(0, 5).join(" ")
+        : "";
+
+    // Respond with detailed job information, including the title
     res.status(200).json({
       state,
       progress,
@@ -45,6 +54,7 @@ router.get("/:jobId", async (req, res) => {
       result,
       error,
       jobData,
+      title, // Include the title in the response
     });
   } catch (error) {
     console.error("Error fetching job status:", error);
