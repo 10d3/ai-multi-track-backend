@@ -294,7 +294,7 @@ class AudioProcessor {
       `compand=attacks=0:points=-80/-80|-50/-50|-40/-30|-30/-20|-20/-10|-10/-5|-5/0|0/0[out]`; // Compression
 
     const finalOutputPath = await this.createTempPath("final_output", "wav");
-    const ffmpegCmd = `ffmpeg ${inputs} -filter_complex "${filterComplex}" -map "[out]" -t ${bgDuration} -y "${finalOutputPath}"`;
+    const ffmpegCmd = `ffmpeg ${inputs} -filter_complex "${filterComplex}" -map "[out]" -c:a pcm_s16le -t ${bgDuration} -y "${finalOutputPath}"`;
 
     await execAsync(ffmpegCmd);
 
