@@ -1,4 +1,4 @@
-import { Queue } from 'bullmq';
+import { Queue, QueueEvents } from 'bullmq';
 import path from 'path';
 import { Storage } from '@google-cloud/storage';
 import dotenv from 'dotenv';
@@ -26,6 +26,8 @@ const audioProcessingQueue = new Queue('audio-processing', {
     port: 6379        // Your Redis port
   }
 });
+
+export const eventAudioProcessing = new QueueEvents("audio-processing")
 
 // Google Cloud Storage setup
 const storageGoogle = new Storage({
