@@ -220,7 +220,7 @@ class AudioProcessor {
           "wav"
         );
         await execAsync(
-          `ffmpeg -i "${file}" -af "highpass=f=100,lowpass=f=3000,volume=2" -ar 44100 -y "${outputPath}"`
+          `ffmpeg -i "${file}" -ar 44100 -y "${outputPath}"`
         );
         return outputPath;
       })
@@ -279,13 +279,13 @@ class AudioProcessor {
 
     // Apply audio enhancements with boosted bass
     filterComplex +=
-      `[mixed]equalizer=f=60:t=q:w=200:g=5,` + // Boost low frequencies (60 Hz) for warmth
-  `equalizer=f=300:t=q:w=200:g=3,` + // Boost lower mids (300 Hz) for clarity
-  `equalizer=f=1000:t=q:w=200:g=5,` + // Boost mid frequencies (1000 Hz) for presence
-  `equalizer=f=3000:t=q:w=200:g=3,` + // Boost high frequencies (3000 Hz) for brightness
-  `equalizer=f=6000:t=q:w=200:g=2,` + // Slightly boost very high frequencies (6000 Hz) for airiness
-  `dynaudnorm=p=0.95:m=15,` + // Dynamic normalization
-  `compand=attacks=0:points=-80/-80|-50/-50|-40/-30|-30/-20|-20/-10|-10/-5|-5/0|0/0[out]`; // Compression
+      `[mixed]equalizer=f=80:t=q:w=200:g=-3,` + // High-pass filter to cut below 80 Hz
+      `equalizer=f=300:t=q:w=200:g=-5,` + // Reduce low mids (300 Hz) to clear muddiness
+      `equalizer=f=1000:t=q:w=200:g=5,` + // Boost mid frequencies (1000 Hz) for presence
+      `equalizer=f=3000:t=q:w=200:g=3,` + // Boost high frequencies (3000 Hz) for brightness
+      `equalizer=f=6000:t=q:w=200:g=2,` + // Slightly boost very high frequencies (6000 Hz) for airiness
+      `dynaudnorm=p=0.95:m=15,` + // Dynamic normalization
+      `compand=attacks=0:points=-80/-80|-50/-50|-40/-30|-30/-20|-20/-10|-10/-5|-5/0|0/0[out]`; // Compression
 
     const finalOutputPath = await this.createTempPath("final_output", "wav");
     const ffmpegCmd = `ffmpeg ${inputs} -filter_complex "${filterComplex}" -map "[out]" -c:a pcm_s16le -t ${bgDuration} -y "${finalOutputPath}"`;
