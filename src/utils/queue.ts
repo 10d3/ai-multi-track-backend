@@ -30,9 +30,11 @@ const audioProcessingQueue = new Queue('audio-processing', {
 export const eventAudioProcessing = new QueueEvents("audio-processing")
 
 // Google Cloud Storage setup
-const storageGoogle = new Storage({
-  // credentials
-  keyFilename: path.join(__dirname, '..', 'config', 'endless-bolt-430416-h3-e0a89a12879b.json')
-});
+// const storageGoogle = new Storage({
+//   // credentials
+//   keyFilename: path.join(__dirname, '..', 'config', 'endless-bolt-430416-h3-e0a89a12879b.json')
+// });
+
+const storageGoogle = new Storage({ credentials });
 
 export { audioProcessingQueue, storageGoogle };

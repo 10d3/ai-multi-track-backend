@@ -1,5 +1,5 @@
 import express from 'express';
-import { isolateSpeakers } from '../isolate-speaker';
+import { isolateSpeakers } from '../services/isolate-speaker';
 
 const router = express.Router();
 const auth = require('../middleware/auth');

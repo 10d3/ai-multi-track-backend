@@ -3,7 +3,8 @@
   "module": "./src/server.ts",
   "type": "module",
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "concurrently": "^9.1.2"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
@@ -36,6 +37,7 @@
     "migrate": "prisma migrate dev",
     "dev": "bun run --hot src/server.ts",
     "worker": "bun run --hot src/utils/worker.ts",
-    "websocket":"bun run --hot src/utils/webSocket.ts"
+    "websocket": "bun run --hot src/utils/webSocket.ts",
+    "start:all": "concurrently \"bun run dev\" \"bun run worker\" \"bun run websocket\""
   }
 }
