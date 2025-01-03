@@ -21,23 +21,19 @@ const credentials = {
   universe_domain: process.env.GOOGLE_UNIVERSE_DOMAIN,
 };
 
-const connection = new IORedis({
-  host: process.env.REDIS_HOST || 'your-cloud-redis-host', // Your cloud Redis host
-  port: Number(process.env.REDIS_PORT) || 6379,           // Your cloud Redis port
-  password: process.env.REDIS_PASSWORD || 'your-password', // Your Redis password if required
-});
-
-connection.on('error', (err) => {
-  console.error('Redis connection error:', err);
-});
+// const connection = new IORedis({
+//   host: process.env.REDIS_HOST || 'your-cloud-redis-host', // Your cloud Redis host
+//   port: Number(process.env.REDIS_PORT) || 6379,           // Your cloud Redis port
+//   password: process.env.REDIS_PASSWORD || 'your-password', // Your Redis password if required
+// });
 
 
 const audioProcessingQueue = new Queue('audio-processing', {
-  // connection: {
-  //   host: process.env.WORKER_URL || "localhost", // Your Redis host
-  //   port: Number(process.env.WORKER_PORT) || 6379     // Your Redis port
-  // }
-  connection
+  connection: {
+    host: process.env.WORKER_URL || "localhost", // Your Redis host
+    port: Number(process.env.WORKER_PORT) || 6380     // Your Redis port
+  }
+  // connection
 });
 
 export const eventAudioProcessing = new QueueEvents("audio-processing")
