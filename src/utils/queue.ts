@@ -27,6 +27,11 @@ const connection = new IORedis({
   password: process.env.REDIS_PASSWORD || 'your-password', // Your Redis password if required
 });
 
+connection.on('error', (err) => {
+  console.error('Redis connection error:', err);
+});
+
+
 const audioProcessingQueue = new Queue('audio-processing', {
   // connection: {
   //   host: process.env.WORKER_URL || "localhost", // Your Redis host
