@@ -26,11 +26,14 @@ const credentials = {
 //   port: Number(process.env.REDIS_PORT) || 6379,           // Your cloud Redis port
 //   password: process.env.REDIS_PASSWORD || 'your-password', // Your Redis password if required
 // });
-
-const connection = new IORedis({
-  host: 'coolify.sayitai.com',
-  port: 6380
-});
+function getRedisURl(){
+  if(process.env.REDIS_URL){
+    return process.env.REDIS_URL
+  }else{
+    throw new Error("redis url is missing")
+  }
+}
+const connection = new IORedis(getRedisURl());
 
 connection.on('error', (error:any) => {
   console.error('Redis connection error:', error);
