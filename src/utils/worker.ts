@@ -4,7 +4,7 @@ import { createReadStream } from "fs";
 import path from "path";
 import { promisify } from "util";
 import { exec } from "child_process";
-import { storageGoogle } from "./queue";
+import { connection, storageGoogle } from "./queue";
 import { v4 as uuidv4 } from "uuid";
 import { downloadAudioFile } from "./utils";
 import dotenv from "dotenv";
@@ -400,13 +400,14 @@ const worker = new Worker<JobData>(
     }
   },
   {
-    connection: {
-      // host: process.env.WORKER_URL,
-      // port: Number(process.env.WORKER_PORT),
-      url: "redis://default:bDUE3KQhcCwemyKWutHAT5jxmrUlVAbIoOcRP9a25LvfRA8493X8KNgfW9bA7NpJ@jcg08kw004wsog8c88wcoo8g:6379/0",
-      // maxRetriesPerRequest: 3,
-      enableReadyCheck: false,
-    },
+    // connection: {
+    //   host: process.env.WORKER_URL,
+    //   port: Number(process.env.WORKER_PORT),
+    //   // url: "redis://default:jmrOWX5VqYTGkIv1gqpfaywDANLdD6Rh@redis-18741.c100.us-east-1-4.ec2.redns.redis-cloud.com:18741",
+    //   // maxRetriesPerRequest: 3,
+    //   // enableReadyCheck: false,
+    // },
+    connection: connection,
     concurrency: 5,
   }
 );

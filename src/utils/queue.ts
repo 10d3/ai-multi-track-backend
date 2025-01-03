@@ -21,11 +21,11 @@ const credentials = {
   universe_domain: process.env.GOOGLE_UNIVERSE_DOMAIN,
 };
 
-// const connection = new IORedis({
-//   host: process.env.REDIS_HOST || 'your-cloud-redis-host', // Your cloud Redis host
-//   port: Number(process.env.REDIS_PORT) || 6379,           // Your cloud Redis port
-//   password: process.env.REDIS_PASSWORD || 'your-password', // Your Redis password if required
-// });
+const connection = new IORedis({
+  host: process.env.REDIS_HOST || 'your-cloud-redis-host', // Your cloud Redis host
+  port: Number(process.env.REDIS_PORT) || 6379,           // Your cloud Redis port
+  password: process.env.REDIS_PASSWORD || 'your-password', // Your Redis password if required
+});
 function getRedisURl(){
   if(process.env.REDIS_URL){
     return process.env.REDIS_URL
@@ -33,7 +33,6 @@ function getRedisURl(){
     throw new Error("redis url is missing")
   }
 }
-const connection = new IORedis("redis://default:bDUE3KQhcCwemyKWutHAT5jxmrUlVAbIoOcRP9a25LvfRA8493X8KNgfW9bA7NpJ@jcg08kw004wsog8c88wcoo8g:6379/0");
 
 connection.on('error', (error:any) => {
   console.error('Redis connection error:', error);
@@ -44,8 +43,8 @@ connection.on('error', (error:any) => {
 
 const audioProcessingQueue = new Queue('audio-processing', {
   // connection: {
-  //   host: "https://coolify.sayitai.com", // Your Redis host
-  //   port: 6380     // Your Redis port
+  //   host: process.env.REDIS_HOST, // Your Redis host
+  //   port: Number(process.env.REDIS_PORT)     // Your Redis port
   // }
   connection
 });
@@ -60,4 +59,4 @@ export const eventAudioProcessing = new QueueEvents("audio-processing")
 
 const storageGoogle = new Storage({ credentials });
 
-export { audioProcessingQueue, storageGoogle };
+export { audioProcessingQueue, storageGoogle, connection };
