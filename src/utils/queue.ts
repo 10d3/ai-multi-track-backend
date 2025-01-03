@@ -24,6 +24,7 @@ const credentials = {
 const connection = new IORedis({
   host: process.env.REDIS_HOST || 'your-cloud-redis-host', // Your cloud Redis host
   port: Number(process.env.REDIS_PORT) || 6379,           // Your cloud Redis port
+  username:"default",
   password: process.env.REDIS_PASSWORD || 'your-password', // Your Redis password if required
 });
 function getRedisURl(){
