@@ -403,8 +403,8 @@ const worker = new Worker<JobData>(
     connection: {
       // host: process.env.WORKER_URL,
       // port: Number(process.env.WORKER_PORT),
-      url: process.env.REDIS_URL,
-      maxRetriesPerRequest: 3,
+      url: "redis://default:bDUE3KQhcCwemyKWutHAT5jxmrUlVAbIoOcRP9a25LvfRA8493X8KNgfW9bA7NpJ@jcg08kw004wsog8c88wcoo8g:6379/0",
+      // maxRetriesPerRequest: 3,
       enableReadyCheck: false,
     },
     concurrency: 5,
