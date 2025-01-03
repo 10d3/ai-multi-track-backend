@@ -400,14 +400,15 @@ const worker = new Worker<JobData>(
     }
   },
   {
-    // connection: {
-    //   host: process.env.WORKER_URL,
-    //   port: Number(process.env.WORKER_PORT),
-    //   // url: "redis://default:jmrOWX5VqYTGkIv1gqpfaywDANLdD6Rh@redis-18741.c100.us-east-1-4.ec2.redns.redis-cloud.com:18741",
-    //   // maxRetriesPerRequest: 3,
-    //   // enableReadyCheck: false,
-    // },
-    connection: connection,
+    connection: {
+      host: process.env.REDIS_HOST,
+      port: Number(process.env.REDIS_PORT),
+      password: process.env.REDIS_PASSWORD
+      // url: "redis://default:jmrOWX5VqYTGkIv1gqpfaywDANLdD6Rh@redis-18741.c100.us-east-1-4.ec2.redns.redis-cloud.com:18741",
+      // maxRetriesPerRequest: 3,
+      // enableReadyCheck: false,
+    },
+    // connection: connection,
     concurrency: 5,
   }
 );
