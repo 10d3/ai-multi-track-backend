@@ -33,7 +33,7 @@ function getRedisURl(){
     throw new Error("redis url is missing")
   }
 }
-const connection = new IORedis(getRedisURl());
+const connection = new IORedis("redis://default:bDUE3KQhcCwemyKWutHAT5jxmrUlVAbIoOcRP9a25LvfRA8493X8KNgfW9bA7NpJ@jcg08kw004wsog8c88wcoo8g:6379/0");
 
 connection.on('error', (error:any) => {
   console.error('Redis connection error:', error);
