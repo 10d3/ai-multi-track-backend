@@ -27,13 +27,24 @@ const credentials = {
 //   password: process.env.REDIS_PASSWORD || 'your-password', // Your Redis password if required
 // });
 
+const connection = new IORedis({
+  host: 'coolify.sayitai.com',
+  port: 6380
+});
+
+connection.on('error', (error:any) => {
+  console.error('Redis connection error:', error);
+  if (error.code === 'ECONNREFUSED') {
+    console.error('Please check if Redis is running and the connection details are correct');
+  }
+});
 
 const audioProcessingQueue = new Queue('audio-processing', {
-  connection: {
-    host: "https://coolify.sayitai.com", // Your Redis host
-    port: 6380     // Your Redis port
-  }
-  // connection
+  // connection: {
+  //   host: "https://coolify.sayitai.com", // Your Redis host
+  //   port: 6380     // Your Redis port
+  // }
+  connection
 });
 
 export const eventAudioProcessing = new QueueEvents("audio-processing")
