@@ -403,8 +403,9 @@ const worker = new Worker<JobData>(
   },
   {
     connection: {
-      host: process.env.WORKER_URL,
-      port: Number(process.env.WORKER_PORT),
+      // host: process.env.WORKER_URL,
+      // port: Number(process.env.WORKER_PORT),
+      url: process.env.REDIS_URL
     },
     concurrency: 5,
   }
