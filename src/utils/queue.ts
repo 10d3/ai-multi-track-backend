@@ -45,9 +45,8 @@ const credentials = {
 
 const audioProcessingQueue = new Queue("audio-processing", {
   connection: {
-    // host: "redis",
-    // port: 6385,
-    url:"redis://redis:6385"
+    host: "localhost",
+    port: 6385,
   },
 });
 

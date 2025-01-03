@@ -401,9 +401,8 @@ const worker = new Worker<JobData>(
   },
   {
     connection: {
-      // host: "redis",
-      // port: 6385,
-      url:"redis://redis:6385"
+      host: "localhost",
+      port: 6385,
       // username:"default",
       // password: process.env.REDIS_PASSWORD
       // url: "redis://default:jmrOWX5VqYTGkIv1gqpfaywDANLdD6Rh@redis-18741.c100.us-east-1-4.ec2.redns.redis-cloud.com:18741",
