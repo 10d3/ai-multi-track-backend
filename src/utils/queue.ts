@@ -30,7 +30,7 @@ const credentials = {
 
 const audioProcessingQueue = new Queue('audio-processing', {
   connection: {
-    host: "localhost", // Your Redis host
+    host: "https://coolify.sayitai.com", // Your Redis host
     port: 6380     // Your Redis port
   }
   // connection
