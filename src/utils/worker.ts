@@ -219,9 +219,7 @@ class AudioProcessor {
           `processed_speech_${index}`,
           "wav"
         );
-        await execAsync(
-          `ffmpeg -i "${file}" -ar 44100 -y "${outputPath}"`
-        );
+        await execAsync(`ffmpeg -i "${file}" -ar 44100 -y "${outputPath}"`);
         return outputPath;
       })
     );
@@ -405,7 +403,9 @@ const worker = new Worker<JobData>(
     connection: {
       // host: process.env.WORKER_URL,
       // port: Number(process.env.WORKER_PORT),
-      url: process.env.REDIS_URL
+      url: process.env.REDIS_URL,
+      maxRetriesPerRequest: 3,
+      enableReadyCheck: false,
     },
     concurrency: 5,
   }
