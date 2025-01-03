@@ -22,8 +22,8 @@ const credentials = {
 
 const audioProcessingQueue = new Queue('audio-processing', {
   connection: {
-    host: 'localhost', // Your Redis host
-    port: 6379        // Your Redis port
+    host: process.env.WORKER_URL, // Your Redis host
+    port: Number(process.env.WORKER_PORT)       // Your Redis port
   }
 });
 
