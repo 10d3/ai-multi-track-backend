@@ -2,10 +2,19 @@ import { Queue, QueueEvents } from "bullmq";
 import path from "path";
 import { Storage } from "@google-cloud/storage";
 import dotenv from "dotenv";
-// import IORedis from "ioredis";
 import { Redis } from 'ioredis';
 
 dotenv.config();
+
+// Enhanced logging for BullMQ
+// setLoggingOptions({
+//   level: 'debug',
+//   logger: {
+//     log: console.log,
+//     warn: console.warn,
+//     error: console.error
+//   }
+// });
 
 const credentials = {
   type: process.env.GOOGLE_CREDENTIALS_TYPE,
@@ -21,88 +30,129 @@ const credentials = {
   universe_domain: process.env.GOOGLE_UNIVERSE_DOMAIN,
 };
 
+// Comprehensive Redis Configuration
+const redisHost = process.env.REDIS_HOST || '10.0.1.8';
+const redisPort = Number(process.env.REDIS_PORT) || 6379;
+
 const redisConfig = {
-  host: '10.0.1.8',  // Try with IP first
-  // host: 'redis-stack',  // Uncomment to try with hostname
-  port: 6379,
+  host: redisHost,
+  port: redisPort,
   retryStrategy(times: number) {
     const delay = Math.min(times * 50, 2000);
-    console.log(`Retry attempt ${times}, waiting ${delay}ms`);
+    console.log(`Redis Retry attempt ${times}, waiting ${delay}ms`);
     return delay;
   },
-  maxRetriesPerRequest: null
+  maxRetriesPerRequest: null,
+  connectTimeout: 5000,
+  lazyConnect: false,
+  enableReadyCheck: true,
+  // Optional: Add authentication if needed
+  // password: process.env.REDIS_PASSWORD,
 };
 
+// Comprehensive Redis Connection
 export const redis = new Redis(redisConfig);
 
+// Detailed Redis Event Handlers
 redis.on('connect', () => {
-  console.log('Successfully connected to Redis');
+  console.log('Redis: Successfully connected');
 });
 
-redis.on('error', (err:any) => {
-  console.error('Redis connection error:', {
+redis.on('ready', () => {
+  console.log('Redis: Connection is ready');
+});
+
+redis.on('error', (err: any) => {
+  console.error('Redis Connection Error:', {
     message: err.message,
     code: err.code,
     address: err.address,
-    port: err.port
+    port: err.port,
+    stack: err.stack
   });
 });
 
+redis.on('close', () => {
+  console.warn('Redis connection closed');
+});
 
-// const connection = new IORedis({
-//   host: process.env.REDIS_HOST || "your-cloud-redis-host", // Your cloud Redis host
-//   port: Number(process.env.REDIS_PORT) || 6379, // Your cloud Redis port
-//   username: "default",
-//   password: process.env.REDIS_PASSWORD || "your-password", // Your Redis password if required
-// });
-// function getRedisURl() {
-//   if (process.env.REDIS_URL) {
-//     return process.env.REDIS_URL;
-//   } else {
-//     throw new Error("redis url is missing");
-//   }
-// }
+// Comprehensive Connection Test
+async function testRedisConnection() {
+  try {
+    console.log('Attempting Redis connection test...');
+    
+    // Basic connection check
+    await redis.ping();
+    console.log('Redis Ping successful');
 
-// connection.on("error", (error: any) => {
-//   console.error("Redis connection error:", error);
-//   if (error.code === "ECONNREFUSED") {
-//     console.error(
-//       "Please check if Redis is running and the connection details are correct"
-//     );
-//   }
-// });
+    // Additional diagnostics
+    const info = await redis.info();
+    console.log('Redis Server Info:', {
+      version: info.match(/redis_version:(\S+)/)?.[1],
+      mode: info.match(/redis_mode:(\S+)/)?.[1]
+    });
 
-redis.ping()
-  .then(result => {
-    console.log('Ping successful:', result);
-  })
-  .catch(err => {
-    console.error('Ping failed:', err);
-  });
+  } catch (error) {
+    console.error('Comprehensive Redis Connection Test Failed:', error);
+  }
+}
 
-// const audioProcessingQueue = new Queue("audio-processing", {
-//   connection: redis
-// });
-
+// Create Queue with Enhanced Configuration
 const audioProcessingQueue = new Queue("audio-processing", {
   connection: {
-    // host: process.env.WORKER_URL,
-    host:"10.0.1.8",
-    port: Number(process.env.REDIS_PORT),
-    // username: process.env.REDIS_USERNAME,
-    // password: process.env.REDIS_PASSWORD,
+    host: redisHost,
+    port: redisPort,
+    maxRetriesPerRequest: null,
+    connectTimeout: 5000,
   },
-  // connection: redis
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 1000
+    }
+  }
 });
 
-export const eventAudioProcessing = new QueueEvents("audio-processing");
+// Queue Events with Enhanced Logging
+export const eventAudioProcessing = new QueueEvents("audio-processing", {
+  connection: {
+    host: redisHost,
+    port: redisPort,
+  }
+});
 
 // Google Cloud Storage setup
-// const storageGoogle = new Storage({
-//   // credentials
-//   keyFilename: path.join(__dirname, '..', 'config', 'endless-bolt-430416-h3-e0a89a12879b.json')
-// });
-
 const storageGoogle = new Storage({ credentials });
 
-export { audioProcessingQueue, storageGoogle };
+// Async initialization
+async function initializeServices() {
+  try {
+    // Test Redis Connection
+    await testRedisConnection();
+
+    // Optional: Additional startup checks
+    console.log('Checking Queue Connection...');
+    await audioProcessingQueue.add('startup-check', { check: true });
+    console.log('Startup queue job added successfully');
+
+  } catch (error) {
+    console.error('Service Initialization Failed:', error);
+    // Optionally exit or implement retry logic
+    // process.exit(1);
+  }
+}
+
+// Initialize on module import
+initializeServices().catch(console.error);
+
+// Error Handler for Unhandled Rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+// Export key services
+export { 
+  audioProcessingQueue, 
+  storageGoogle, 
+};
