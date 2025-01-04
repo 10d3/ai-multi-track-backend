@@ -21,12 +21,33 @@ const credentials = {
   universe_domain: process.env.GOOGLE_UNIVERSE_DOMAIN,
 };
 
-const redis = new Redis({
-  host: 'redis-stack',
-  port: 6379
+const redisConfig = {
+  host: '10.0.1.8',  // Try with IP first
+  // host: 'redis-stack',  // Uncomment to try with hostname
+  port: 6379,
+  retryStrategy(times: number) {
+    const delay = Math.min(times * 50, 2000);
+    console.log(`Retry attempt ${times}, waiting ${delay}ms`);
+    return delay;
+  },
+  maxRetriesPerRequest: 3
+};
+
+const redis = new Redis(redisConfig);
+
+redis.on('connect', () => {
+  console.log('Successfully connected to Redis');
 });
 
-redis.ping().then(console.log).catch(console.error);
+redis.on('error', (err:any) => {
+  console.error('Redis connection error:', {
+    message: err.message,
+    code: err.code,
+    address: err.address,
+    port: err.port
+  });
+});
+
 
 // const connection = new IORedis({
 //   host: process.env.REDIS_HOST || "your-cloud-redis-host", // Your cloud Redis host
