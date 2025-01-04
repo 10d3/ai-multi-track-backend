@@ -31,8 +31,8 @@ const credentials = {
 };
 
 // Comprehensive Redis Configuration
-const redisHost = process.env.REDIS_HOST || '10.0.1.8';
-const redisPort = Number(process.env.REDIS_PORT) || 6379;
+const redisHost = '10.0.1.8';
+const redisPort = 6379;
 
 const redisConfig = {
   host: redisHost,
