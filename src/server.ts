@@ -37,10 +37,10 @@ app.use("/api/convert-to-audio", auth, convertToAudioRoutes);
 app.use("/api/job-status", jobStatusRoutes);
 app.use("/api/test-bull", combineAudioBullRoutes);
 
-// app.use((req, res) => {
-//   console.log("Headers received:", req.headers);
-//   res.sendFile(path.join(__dirname, "../public", "api-documentation.html"));
-// });
+app.use((req, res) => {
+  console.log("Headers received:", req.headers);
+  res.sendFile(path.join(__dirname, "../public", "api-documentation.html"));
+});
 
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
