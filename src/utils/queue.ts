@@ -85,14 +85,14 @@ redis.ping()
 // });
 
 const audioProcessingQueue = new Queue("audio-processing", {
-  // connection: {
-  //   // host: process.env.WORKER_URL,
-  //   host:"redis-stack",
-  //   port: Number(process.env.REDIS_PORT),
-  //   // username: process.env.REDIS_USERNAME,
-  //   // password: process.env.REDIS_PASSWORD,
-  // },
-  connection: redis
+  connection: {
+    // host: process.env.WORKER_URL,
+    host:"10.0.1.8",
+    port: Number(process.env.REDIS_PORT),
+    // username: process.env.REDIS_USERNAME,
+    // password: process.env.REDIS_PASSWORD,
+  },
+  // connection: redis
 });
 
 export const eventAudioProcessing = new QueueEvents("audio-processing");
