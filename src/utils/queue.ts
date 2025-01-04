@@ -31,7 +31,7 @@ const credentials = {
 };
 
 // Comprehensive Redis Configuration
-const redisHost = '10.0.1.9';
+const redisHost = 'redis-stack';
 const redisPort = 6379;
 
 const redisConfig = {
