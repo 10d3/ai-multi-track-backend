@@ -2,7 +2,8 @@ import { Queue, QueueEvents } from "bullmq";
 import path from "path";
 import { Storage } from "@google-cloud/storage";
 import dotenv from "dotenv";
-import IORedis from "ioredis";
+// import IORedis from "ioredis";
+import { Redis } from 'ioredis';
 
 dotenv.config();
 
@@ -19,6 +20,13 @@ const credentials = {
   client_x509_cert_url: process.env.GOOGLE_CLIENT_X509_CERT_URL,
   universe_domain: process.env.GOOGLE_UNIVERSE_DOMAIN,
 };
+
+const redis = new Redis({
+  host: 'redis-stack',
+  port: 6379
+});
+
+redis.ping().then(console.log).catch(console.error);
 
 // const connection = new IORedis({
 //   host: process.env.REDIS_HOST || "your-cloud-redis-host", // Your cloud Redis host
