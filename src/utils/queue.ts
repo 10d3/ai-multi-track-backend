@@ -43,10 +43,8 @@ const credentials = {
 //   }
 // });
 
-console.log('Redis Host:', process.env.REDIS_HOST);
+console.log('Redis Host:', process.env.WORKER_URL);
 console.log('Redis Port:', process.env.REDIS_PORT);
-console.log('Redis Username:', process.env.REDIS_USERNAME);
-console.log('Redis Password:', process.env.REDIS_PASSWORD);
 
 const audioProcessingQueue = new Queue("audio-processing", {
   connection: {
