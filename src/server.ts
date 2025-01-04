@@ -12,9 +12,12 @@ import { refreshTokenRoutes } from "./routes/refresh-token";
 import { convertToAudioRoutes } from "./routes/convert-to-audio-routes";
 import { jobStatusRoutes } from "./routes/job-status-route";
 import { combineAudioBullRoutes } from "./routes/test-bullmq-routes";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const app = express();
-const port = 8080;
+const port = Number(process.env.SERVER_PORT);
 const auth = require("./middleware/auth");
 
 configureApp(app);
