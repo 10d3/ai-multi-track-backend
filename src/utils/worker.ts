@@ -271,9 +271,7 @@ class AudioProcessor {
     for (let i = 0; i < transcript.length; i++) {
       overlays += `[s${i}]`;
     }
-    filterComplex += `${overlays}amix=inputs=${
-      transcript.length + 1
-    }:dropout_transition=0:normalize=0[mixed];`;
+    filterComplex += `${overlays}amix=inputs=${transcript.length + 1}[mixed];`;
 
     // Apply audio enhancements with boosted bass
     filterComplex +=
