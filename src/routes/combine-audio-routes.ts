@@ -71,7 +71,7 @@ router.post("/", auth, async (req, res) => {
     fs.mkdirSync(spleeterOutputDir, { recursive: true });
 
     // Call the Python script with arguments
-    const spleeterCommand = `python ./src/script/separate_audio.py "${convertedOriginalAudioPath}" "${spleeterOutputDir}"`;
+    const spleeterCommand = `python3 ./src/script/separate_audio.py "${convertedOriginalAudioPath}" "${spleeterOutputDir}"`;
     console.log("Spleeter Python Command:", spleeterCommand);
 
     try {
