@@ -48,7 +48,8 @@ console.log('Redis Port:', process.env.REDIS_PORT);
 
 const audioProcessingQueue = new Queue("audio-processing", {
   connection: {
-    host: process.env.WORKER_URL,
+    // host: process.env.WORKER_URL,
+    host:"10.0.1.8",
     port: Number(process.env.REDIS_PORT),
     // username: process.env.REDIS_USERNAME,
     // password: process.env.REDIS_PASSWORD,
