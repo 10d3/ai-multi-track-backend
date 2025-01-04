@@ -17,7 +17,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
-const port = Number(process.env.SERVER_PORT);
+const port = Number(process.env.SERVER_PORT) || 8090;
 const auth = require("./middleware/auth");
 
 configureApp(app);
