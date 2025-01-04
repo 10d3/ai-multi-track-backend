@@ -55,13 +55,14 @@ console.log('Redis Host:', process.env.WORKER_URL);
 console.log('Redis Port:', process.env.REDIS_PORT);
 
 const audioProcessingQueue = new Queue("audio-processing", {
-  connection: {
-    // host: process.env.WORKER_URL,
-    host:"redis-stack",
-    port: Number(process.env.REDIS_PORT),
-    // username: process.env.REDIS_USERNAME,
-    // password: process.env.REDIS_PASSWORD,
-  },
+  // connection: {
+  //   // host: process.env.WORKER_URL,
+  //   host:"redis-stack",
+  //   port: Number(process.env.REDIS_PORT),
+  //   // username: process.env.REDIS_USERNAME,
+  //   // password: process.env.REDIS_PASSWORD,
+  // },
+  connection: redis
 });
 
 export const eventAudioProcessing = new QueueEvents("audio-processing");
