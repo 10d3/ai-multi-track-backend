@@ -402,7 +402,7 @@ const worker = new Worker<JobData>(
   {
     connection: {
       // host: process.env.WORKER_URL,
-      host:"10.0.1.8",
+      host:"redis-stack",
       port: Number(process.env.REDIS_PORT),
       // username:process.env.REDIS_USERNAME,
       // password: process.env.REDIS_PASSWORD
