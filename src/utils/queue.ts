@@ -16,19 +16,116 @@ dotenv.config();
 //   }
 // });
 
-const credentials = {
-  type: process.env.GOOGLE_CREDENTIALS_TYPE,
-  project_id: process.env.GOOGLE_CREDENTIALS_PROJECT_ID,
-  private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
-  private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-  client_email: process.env.GOOGLE_CLIENT_EMAIL,
-  client_id: process.env.GOOGLE_CLIENT_ID,
-  auth_uri: process.env.GOOGLE_AUTH_URI,
-  token_uri: process.env.GOOGLE_TOKEN_URI,
-  auth_provider_x509_cert_url: process.env.GOOGLE_AUTH_PROVIDER_X509_CERT_URL,
-  client_x509_cert_url: process.env.GOOGLE_CLIENT_X509_CERT_URL,
-  universe_domain: process.env.GOOGLE_UNIVERSE_DOMAIN,
-};
+// const credentials = {
+//   type: process.env.GOOGLE_CREDENTIALS_TYPE,
+//   project_id: process.env.GOOGLE_CREDENTIALS_PROJECT_ID,
+//   private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
+//   private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+//   client_email: process.env.GOOGLE_CLIENT_EMAIL,
+//   client_id: process.env.GOOGLE_CLIENT_ID,
+//   auth_uri: process.env.GOOGLE_AUTH_URI,
+//   token_uri: process.env.GOOGLE_TOKEN_URI,
+//   auth_provider_x509_cert_url: process.env.GOOGLE_AUTH_PROVIDER_X509_CERT_URL,
+//   client_x509_cert_url: process.env.GOOGLE_CLIENT_X509_CERT_URL,
+//   universe_domain: process.env.GOOGLE_UNIVERSE_DOMAIN,
+// };
+
+function validateCredentials(credentials:any) {
+  const requiredFields = [
+    'type', 
+    'project_id', 
+    'private_key_id', 
+    'private_key', 
+    'client_email', 
+    'client_id'
+  ];
+
+  const missingFields = requiredFields.filter(field => 
+    !credentials[field] || credentials[field].trim() === ''
+  );
+
+  if (missingFields.length > 0) {
+    throw new Error(`Missing Google Cloud credentials: ${missingFields.join(', ')}`);
+  }
+
+  // Additional checks
+  if (!credentials.private_key.includes('BEGIN PRIVATE KEY')) {
+    throw new Error('Invalid private key format');
+  }
+}
+
+// Credentials preparation function
+function prepareCredentials() {
+  const credentials = {
+    type: process.env.GOOGLE_CREDENTIALS_TYPE,
+    project_id: process.env.GOOGLE_CREDENTIALS_PROJECT_ID,
+    private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
+    private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+    client_email: process.env.GOOGLE_CLIENT_EMAIL,
+    client_id: process.env.GOOGLE_CLIENT_ID,
+    auth_uri: process.env.GOOGLE_AUTH_URI,
+    token_uri: process.env.GOOGLE_TOKEN_URI,
+    auth_provider_x509_cert_url: process.env.GOOGLE_AUTH_PROVIDER_X509_CERT_URL,
+    client_x509_cert_url: process.env.GOOGLE_CLIENT_X509_CERT_URL,
+    universe_domain: process.env.GOOGLE_UNIVERSE_DOMAIN,
+  };
+
+  // Log sanitized credentials for debugging
+  console.log('Google Cloud Credentials:', {
+    type: credentials.type,
+    project_id: credentials.project_id,
+    client_email: credentials.client_email,
+    // Do not log sensitive information like private key
+  });
+
+  return credentials;
+}
+
+// Create Storage instance with robust error handling
+function createGoogleStorage() {
+  try {
+    // Prepare and validate credentials
+    const credentials = prepareCredentials();
+    validateCredentials(credentials);
+
+    // Create Storage instance
+    const storageGoogle = new Storage({ 
+      credentials,
+      projectId: credentials.project_id 
+    });
+
+    // Verify storage connection
+    async function verifyStorageConnection() {
+      try {
+        // List buckets to test connection
+        const [buckets] = await storageGoogle.getBuckets();
+        console.log('Successfully connected to Google Cloud Storage');
+        console.log('Available Buckets:', buckets.map(bucket => bucket.name));
+      } catch (connectionError:any) {
+        console.error('Google Cloud Storage Connection Error:', {
+          message: connectionError.message,
+          code: connectionError.code,
+          details: connectionError.details
+        });
+        throw new Error(`Storage connection failed: ${connectionError.message}`);
+      }
+    }
+
+    // Optional: Verify connection
+    verifyStorageConnection().catch(console.error);
+
+    return storageGoogle;
+  } catch (error:any) {
+    console.error('Google Cloud Storage Initialization Error:', {
+      message: error.message,
+      stack: error.stack
+    });
+    throw error;
+  }
+}
+
+// Create and export Storage instance
+const storageGoogle = createGoogleStorage();
 
 // Comprehensive Redis Configuration
 export const redisHost = 'redis-stack';
@@ -123,7 +220,7 @@ export const eventAudioProcessing = new QueueEvents("audio-processing", {
 });
 
 // Google Cloud Storage setup
-const storageGoogle = new Storage({ credentials });
+// const storageGoogle = new Storage({ credentials });
 
 // Async initialization
 async function initializeServices() {
