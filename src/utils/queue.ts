@@ -30,7 +30,7 @@ const redisConfig = {
     console.log(`Retry attempt ${times}, waiting ${delay}ms`);
     return delay;
   },
-  maxRetriesPerRequest: 3
+  // maxRetriesPerRequest: 3
 };
 
 export const redis = new Redis(redisConfig);
