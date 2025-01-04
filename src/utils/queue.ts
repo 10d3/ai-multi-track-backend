@@ -72,8 +72,17 @@ redis.on('error', (err:any) => {
 //   }
 // });
 
-console.log('Redis Host:', process.env.WORKER_URL);
-console.log('Redis Port:', process.env.REDIS_PORT);
+redis.ping()
+  .then(result => {
+    console.log('Ping successful:', result);
+  })
+  .catch(err => {
+    console.error('Ping failed:', err);
+  });
+
+// const audioProcessingQueue = new Queue("audio-processing", {
+//   connection: redis
+// });
 
 const audioProcessingQueue = new Queue("audio-processing", {
   // connection: {
