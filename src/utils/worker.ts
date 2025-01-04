@@ -4,7 +4,7 @@ import { createReadStream } from "fs";
 import path from "path";
 import { promisify } from "util";
 import { exec } from "child_process";
-import { redis, storageGoogle } from "./queue";
+import { redis, redisHost, redisPort, storageGoogle } from "./queue";
 import { v4 as uuidv4 } from "uuid";
 import { downloadAudioFile } from "./utils";
 import dotenv from "dotenv";
@@ -401,13 +401,18 @@ const worker = new Worker<JobData>(
   },
   {
     connection: {
-      // host: process.env.WORKER_URL,
-      host:"10.0.1.8",
-      port: Number(process.env.REDIS_PORT),
-      // username:process.env.REDIS_USERNAME,
-      // password: process.env.REDIS_PASSWORD
+      host: redisHost,
+      port: redisPort,
+      maxRetriesPerRequest: null,
+      connectTimeout: 5000,
     },
-    // connection : redis,
+    // defaultJobOptions: {
+    //   attempts: 3,
+    //   backoff: {
+    //     type: 'exponential',
+    //     delay: 1000
+    //   }
+    // },
     concurrency: 5,
   }
 );
