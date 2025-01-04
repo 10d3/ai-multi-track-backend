@@ -33,7 +33,7 @@ const redisConfig = {
   maxRetriesPerRequest: 3
 };
 
-const redis = new Redis(redisConfig);
+export const redis = new Redis(redisConfig);
 
 redis.on('connect', () => {
   console.log('Successfully connected to Redis');
