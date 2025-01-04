@@ -54,13 +54,32 @@ function validateCredentials(credentials:any) {
   }
 }
 
+function normalizePrivateKey(privateKey: string | undefined): string {
+  if (!privateKey) {
+    throw new Error('Private key is undefined');
+  }
+
+  // First, normalize any Windows-style line endings
+  let normalized = privateKey.replace(/\\r\\n/g, '\n');
+  // Then handle cases where \n is literally in the string
+  normalized = normalized.replace(/\\n/g, '\n');
+  
+  // Handle case where the key might have been double-escaped
+  if (!normalized.includes('-----BEGIN PRIVATE KEY-----')) {
+    normalized = normalized.replace(/\\/g, '');
+  }
+
+  return normalized;
+}
+
 // Credentials preparation function
 function prepareCredentials() {
   const credentials = {
     type: process.env.GOOGLE_CREDENTIALS_TYPE,
     project_id: process.env.GOOGLE_CREDENTIALS_PROJECT_ID,
     private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
-    private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+    // private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+    private_key: normalizePrivateKey(process.env.GOOGLE_PRIVATE_KEY),
     client_email: process.env.GOOGLE_CLIENT_EMAIL,
     client_id: process.env.GOOGLE_CLIENT_ID,
     auth_uri: process.env.GOOGLE_AUTH_URI,
