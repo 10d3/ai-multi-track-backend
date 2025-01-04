@@ -28,7 +28,7 @@ router.post("/", async (req, res) => {
   const bucketName = "ai-multi-track";
 
   exec(
-    `python ./src/script/download_audio.py ${url} ${filePath}`,
+    `python3 ./src/script/download_audio.py ${url} ${filePath}`,
     async (error, stdout, stderr) => {
       if (error) {
         console.error(`Error: ${error.message}`);

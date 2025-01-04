@@ -174,7 +174,7 @@ class AudioProcessor {
       console.log("Running Spleeter on:", convertedOriginalPath);
       const scriptPath = path.resolve("./src/script/separate_audio.py");
       await execAsync(
-        `python "${scriptPath}" "${convertedOriginalPath}" "${spleeterOutputDir}"`
+        `python3 "${scriptPath}" "${convertedOriginalPath}" "${spleeterOutputDir}"`
       );
 
       const subdirs = await fs.readdir(spleeterOutputDir);
