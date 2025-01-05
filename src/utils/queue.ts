@@ -15,12 +15,24 @@ dotenv.config();
 //     error: console.error
 //   }
 // });
+function cleanPrivateKey(key: string | undefined) {
+  if (!key) return '';
+  return key
+    .replace(/\\n/g, '\n')  // Replace literal \n with newlines
+    .replace(/["']/g, '')   // Remove any quotes
+    .replace(/\\/g, '');    // Remove any remaining backslashes
+}
+
+// Usage:
+const privateKey = cleanPrivateKey(process.env.GOOGLE_PRIVATE_KEY);
+console.log("claude formating: ",privateKey)
 
 const credentials = {
   type: process.env.GOOGLE_CREDENTIALS_TYPE,
   project_id: process.env.GOOGLE_CREDENTIALS_PROJECT_ID,
   private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
-  private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+  // private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+  private_key: privateKey,
   client_email: process.env.GOOGLE_CLIENT_EMAIL,
   client_id: process.env.GOOGLE_CLIENT_ID,
   auth_uri: process.env.GOOGLE_AUTH_URI,
@@ -31,7 +43,6 @@ const credentials = {
 };
 
 console.log("private_key:", process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),)
-
 // Comprehensive Redis Configuration
 export const redisHost = "redis-stack";
 export const redisPort = 6379;
