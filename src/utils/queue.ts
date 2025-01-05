@@ -30,6 +30,8 @@ const credentials = {
   universe_domain: process.env.GOOGLE_UNIVERSE_DOMAIN,
 };
 
+console.log("private_key:", process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),)
+
 // Comprehensive Redis Configuration
 export const redisHost = "redis-stack";
 export const redisPort = 6379;
