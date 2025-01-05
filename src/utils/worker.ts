@@ -203,15 +203,15 @@ class AudioProcessor {
   ): Promise<string> {
     await this.verifyFile(backgroundTrack);
     await Promise.all(speechFiles.map((file) => this.verifyFile(file)));
-  
+
     const bgDuration = await this.getAudioDuration(backgroundTrack);
-  
+
     // Process background track
     const processedBgPath = await this.createTempPath("processed_bg", "wav");
     await execAsync(
       `ffmpeg -i "${backgroundTrack}" -af "volume=0.3,lowpass=f=1000" -ar 44100 -t ${bgDuration} -y "${processedBgPath}"`
     );
-  
+
     // Process speech files
     const processedSpeechFiles = await Promise.all(
       speechFiles.map(async (file, index) => {
@@ -223,59 +223,71 @@ class AudioProcessor {
         return outputPath;
       })
     );
-  
+
     let filterComplex = ``;
     let inputs = `-i "${processedBgPath}" `;
     let overlays = ``;
-  
-    // Calculate timing adjustments
+
+    // Adjust timings to fit within background duration
     const firstStart = transcript[0].start;
     const lastEnd = transcript[transcript.length - 1].end as number;
     const totalDuration = lastEnd - firstStart;
-  
-    // Add input files and create delays
+    const scaleFactor = bgDuration / totalDuration;
+
     for (let i = 0; i < transcript.length; i++) {
       const originalStart = transcript[i].start;
-      const adjustedStart = i === 0 ? 0 : (originalStart - firstStart);
-  
+      const originalEnd = transcript[i].end as number;
+
+      // Adjust start and end times
+      const adjustedStart =
+        i === 0 ? 0 : (originalStart - firstStart) * scaleFactor;
+      const adjustedEnd =
+        i === transcript.length - 1
+          ? bgDuration
+          : (originalEnd - firstStart) * scaleFactor;
+      const adjustedDuration = adjustedEnd - adjustedStart;
+
       inputs += `-i "${processedSpeechFiles[i]}" `;
-      filterComplex += `[${i + 1}:a]atrim=0,asetpts=PTS-STARTPTS[adj${i}];`;
+
+      const actualDuration = await this.getAudioDuration(
+        processedSpeechFiles[i]
+      );
+      let tempoFactor = actualDuration / adjustedDuration;
+
+      // Ensure tempoFactor is within the valid range (0.5 to 2)
+      tempoFactor = Math.max(0.5, Math.min(tempoFactor, 2));
+
+      filterComplex += `[${
+        i + 1
+      }:a]atempo=${tempoFactor},atrim=0:${adjustedDuration},asetpts=PTS-STARTPTS[adj${i}];`;
       filterComplex += `[adj${i}]adelay=${Math.round(
         adjustedStart * 1000
       )}|${Math.round(adjustedStart * 1000)}[s${i}];`;
     }
-  
+
     filterComplex += `[0:a]apad[bg];`;
     overlays += `[bg]`;
-  
+
     for (let i = 0; i < transcript.length; i++) {
       overlays += `[s${i}]`;
     }
-  
-    // Mix all audio streams
     filterComplex += `${overlays}amix=inputs=${transcript.length + 1}[mixed];`;
-  
-    // Calculate and apply uniform tempo adjustment to match background duration
-    const tempoFactor = totalDuration / bgDuration;
-    // Ensure tempoFactor is within the valid range (0.5 to 2)
-    const adjustedTempoFactor = Math.max(0.5, Math.min(tempoFactor, 2));
-  
-    // Apply tempo adjustment and audio enhancements
-    filterComplex += 
-      `[mixed]atempo=${adjustedTempoFactor},` + // Uniform tempo adjustment
-      `equalizer=f=80:t=q:w=200:g=-3,` + // High-pass filter to cut below 80 Hz
+
+    // Apply audio enhancements with boosted bass
+    filterComplex +=
+      `[mixed]equalizer=f=80:t=q:w=200:g=-3,` + // High-pass filter to cut below 80 Hz
       `equalizer=f=300:t=q:w=200:g=-5,` + // Reduce low mids (300 Hz) to clear muddiness
       `equalizer=f=1000:t=q:w=200:g=5,` + // Boost mid frequencies (1000 Hz) for presence
       `equalizer=f=3000:t=q:w=200:g=3,` + // Boost high frequencies (3000 Hz) for brightness
       `equalizer=f=6000:t=q:w=200:g=2,` + // Slightly boost very high frequencies (6000 Hz) for airiness
       `dynaudnorm=p=0.95:m=15,` + // Dynamic normalization
       `compand=attacks=0:points=-80/-80|-50/-50|-40/-30|-30/-20|-20/-10|-10/-5|-5/0|0/0[out]`; // Compression
-  
+
     const finalOutputPath = await this.createTempPath("final_output", "wav");
     const ffmpegCmd = `ffmpeg ${inputs} -filter_complex "${filterComplex}" -map "[out]" -c:a pcm_s16le -t ${bgDuration} -y "${finalOutputPath}"`;
-  
+
     await execAsync(ffmpegCmd);
-  
+
     return finalOutputPath;
   }
 
