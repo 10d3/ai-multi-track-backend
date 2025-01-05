@@ -206,10 +206,10 @@ class AudioProcessor {
   
     const bgDuration = await this.getAudioDuration(backgroundTrack);
   
-    // Process background track with just volume reduction
+    // Keep background processing as is
     const processedBgPath = await this.createTempPath("processed_bg", "wav");
     await execAsync(
-      `ffmpeg -i "${backgroundTrack}" -af "volume=0.2" -ar 44100 -y "${processedBgPath}"`
+      `ffmpeg -i "${backgroundTrack}" -ar 44100 -y "${processedBgPath}"`
     );
   
     // Process speech files - just sample rate conversion
@@ -253,8 +253,8 @@ class AudioProcessor {
       overlays += `[s${i}]`;
     }
   
-    // Simple mix with background lowered
-    filterComplex += `${overlays}amix=inputs=${transcript.length + 1}:weights='0.5 ${Array(transcript.length).fill('1.5').join(' ')}'[out]`;
+    // Simple mix approach with volume boost
+    filterComplex += `${overlays}amix=inputs=${transcript.length + 1}[mixed];[mixed]volume=4.0[out]`;
   
     const finalOutputPath = await this.createTempPath("final_output", "wav");
     const ffmpegCmd = `ffmpeg ${inputs} -filter_complex "${filterComplex}" -map "[out]" -c:a pcm_s16le -t ${bgDuration} -y "${finalOutputPath}"`;
