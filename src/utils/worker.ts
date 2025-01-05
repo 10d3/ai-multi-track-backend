@@ -206,22 +206,22 @@ class AudioProcessor {
   
     const bgDuration = await this.getAudioDuration(backgroundTrack);
   
-    // Process background track with consistent volume
+    // Process background track with reduced bass
     const processedBgPath = await this.createTempPath("processed_bg", "wav");
     await execAsync(
-      `ffmpeg -i "${backgroundTrack}" -af "volume=0.3,lowpass=f=1000" -ar 44100 -y "${processedBgPath}"`
+      `ffmpeg -i "${backgroundTrack}" -af "volume=0.3,highpass=f=150,lowpass=f=1000" -ar 44100 -y "${processedBgPath}"`
     );
   
-    // Pre-process speech files with normalized volume
+    // Pre-process speech files with normalized volume and reduced bass
     const processedSpeechFiles = await Promise.all(
       speechFiles.map(async (file, index) => {
         const outputPath = await this.createTempPath(
           `processed_speech_${index}`,
           "wav"
         );
-        // Add volume normalization to speech processing
+        // Add highpass filter to reduce bass
         await execAsync(
-          `ffmpeg -i "${file}" -af "volume=1.5,dynaudnorm=p=0.95:m=15:s=10" -ar 44100 -y "${outputPath}"`
+          `ffmpeg -i "${file}" -af "volume=1.5,highpass=f=150,dynaudnorm=p=0.95:m=15:s=10" -ar 44100 -y "${outputPath}"`
         );
         return outputPath;
       })
@@ -244,8 +244,8 @@ class AudioProcessor {
       const relativeStart = transcript[i].start - firstStart;
       const scaledDelay = Math.round(relativeStart * scaleFactor * 1000);
       
-      // Add volume stabilization to each speech stream
-      filterComplex += `[${i + 1}:a]volume=1.5,dynaudnorm=p=0.95:m=15:s=10[norm${i}];`;
+      // Add highpass filter to further reduce bass
+      filterComplex += `[${i + 1}:a]volume=1.5,highpass=f=150,dynaudnorm=p=0.95:m=15:s=10[norm${i}];`;
       filterComplex += `[norm${i}]atrim=0,asetpts=PTS-STARTPTS[adj${i}];`;
       filterComplex += `[adj${i}]adelay=${scaledDelay}|${scaledDelay}[s${i}];`;
     }
@@ -260,20 +260,21 @@ class AudioProcessor {
     // Mix with adjusted weights
     filterComplex += `${overlays}amix=inputs=${transcript.length + 1}:weights='1 ${Array(transcript.length).fill('2').join(' ')}'[premix];`;
   
-    // Final processing chain
+    // Final processing chain with reduced bass emphasis
     filterComplex += 
       `[premix]` +
-      // Normalize before EQ
-      `dynaudnorm=p=0.95:m=15:s=10:g=5,` +
-      // EQ adjustments
-      `equalizer=f=80:t=q:w=200:g=-3,` +
-      `equalizer=f=300:t=q:w=200:g=-5,` +
-      `equalizer=f=1000:t=q:w=200:g=5,` +
-      `equalizer=f=3000:t=q:w=200:g=3,` +
-      `equalizer=f=6000:t=q:w=200:g=2,` +
-      // Final volume stabilization
-      `dynaudnorm=p=0.95:m=15:s=10:g=5,` +
-      // Gentle compression
+      // Initial normalization
+      `dynaudnorm=p=0.95:m=15:s=10:g=3,` +
+      // EQ adjustments with reduced bass
+      `highpass=f=150,` + // Cut very low frequencies
+      `equalizer=f=80:t=q:w=200:g=-12,` + // Significantly reduce sub-bass
+      `equalizer=f=150:t=q:w=200:g=-6,` + // Reduce low bass
+      `equalizer=f=300:t=q:w=200:g=-3,` + // Slightly reduce upper bass
+      `equalizer=f=1000:t=q:w=200:g=3,` + // Slight boost to mids
+      `equalizer=f=3000:t=q:w=200:g=2,` + // Slight boost to highs
+      `equalizer=f=6000:t=q:w=200:g=1,` + // Minimal boost to very highs
+      // Final normalization and compression
+      `dynaudnorm=p=0.95:m=15:s=10:g=3,` +
       `compand=attacks=0.1:decays=0.5:points=-80/-80|-50/-50|-40/-30|-30/-20|-20/-10|-10/-5|-5/0|0/0[out]`;
   
     const finalOutputPath = await this.createTempPath("final_output", "wav");
