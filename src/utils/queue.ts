@@ -134,13 +134,13 @@ export const eventAudioProcessing = new QueueEvents("audio-processing", {
 // Google Cloud Storage setup
 const storageGoogle = new Storage({ credentials });
 
-try {
-  await storageGoogle.bucket(process.env.BUCKET_NAME as string).getFiles();
-  console.log("private_key:", process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),)
-} catch (error:any) {
-  console.error('Google Cloud Storage Connection Error:', error);
-  throw new Error(`Storage connection failed: ${error.message}`);
-}
+// try {
+//   await storageGoogle.bucket(process.env.BUCKET_NAME as string).getFiles();
+//   console.log("private_key:", process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),)
+// } catch (error:any) {
+//   console.error('Google Cloud Storage Connection Error:', error);
+//   throw new Error(`Storage connection failed: ${error.message}`);
+// }
 
 // Async initialization
 async function initializeServices() {
