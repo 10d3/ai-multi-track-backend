@@ -44,7 +44,7 @@ router.get("/:jobId", async (req, res) => {
     const title =
       typeof transcript === "string"
         ? transcript.split(" ").slice(0, 5).join(" ")
-        : "";
+        : transcript[0].text.split(" ").slice(0, 5).join(" ");
 
     // Respond with detailed job information, including the title
     res.status(200).json({
