@@ -23,9 +23,7 @@ function cleanPrivateKey(key: string | undefined) {
     .replace(/\\/g, '');    // Remove any remaining backslashes
 }
 
-// Usage:
 const privateKey = cleanPrivateKey(process.env.GOOGLE_PRIVATE_KEY);
-console.log("claude formating: ",privateKey)
 
 const credentials = {
   type: process.env.GOOGLE_CREDENTIALS_TYPE,
@@ -42,7 +40,6 @@ const credentials = {
   universe_domain: process.env.GOOGLE_UNIVERSE_DOMAIN,
 };
 
-console.log("private_key:", process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),)
 // Comprehensive Redis Configuration
 export const redisHost = "redis-stack";
 export const redisPort = 6379;
