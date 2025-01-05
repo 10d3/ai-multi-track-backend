@@ -2,7 +2,7 @@ import { Queue, QueueEvents } from "bullmq";
 import path from "path";
 import { Storage } from "@google-cloud/storage";
 import dotenv from "dotenv";
-import { Redis } from 'ioredis';
+import { Redis } from "ioredis";
 
 dotenv.config();
 
@@ -16,138 +16,22 @@ dotenv.config();
 //   }
 // });
 
-// const credentials = {
-//   type: process.env.GOOGLE_CREDENTIALS_TYPE,
-//   project_id: process.env.GOOGLE_CREDENTIALS_PROJECT_ID,
-//   private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
-//   private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-//   client_email: process.env.GOOGLE_CLIENT_EMAIL,
-//   client_id: process.env.GOOGLE_CLIENT_ID,
-//   auth_uri: process.env.GOOGLE_AUTH_URI,
-//   token_uri: process.env.GOOGLE_TOKEN_URI,
-//   auth_provider_x509_cert_url: process.env.GOOGLE_AUTH_PROVIDER_X509_CERT_URL,
-//   client_x509_cert_url: process.env.GOOGLE_CLIENT_X509_CERT_URL,
-//   universe_domain: process.env.GOOGLE_UNIVERSE_DOMAIN,
-// };
-
-function validateCredentials(credentials:any) {
-  const requiredFields = [
-    'type', 
-    'project_id', 
-    'private_key_id', 
-    'private_key', 
-    'client_email', 
-    'client_id'
-  ];
-
-  const missingFields = requiredFields.filter(field => 
-    !credentials[field] || credentials[field].trim() === ''
-  );
-
-  if (missingFields.length > 0) {
-    throw new Error(`Missing Google Cloud credentials: ${missingFields.join(', ')}`);
-  }
-
-  // Additional checks
-  if (!credentials.private_key.includes('BEGIN PRIVATE KEY')) {
-    throw new Error('Invalid private key format');
-  }
-}
-
-function normalizePrivateKey(privateKey: string | undefined): string {
-  if (!privateKey) {
-    throw new Error('Private key is undefined');
-  }
-
-  // First, normalize any Windows-style line endings
-  let normalized = privateKey.replace(/\\r\\n/g, '\n');
-  // Then handle cases where \n is literally in the string
-  normalized = normalized.replace(/\\n/g, '\n');
-  
-  // Handle case where the key might have been double-escaped
-  if (!normalized.includes('-----BEGIN PRIVATE KEY-----')) {
-    normalized = normalized.replace(/\\/g, '');
-  }
-
-  return normalized;
-}
-
-// Credentials preparation function
-function prepareCredentials() {
-  const credentials = {
-    type: process.env.GOOGLE_CREDENTIALS_TYPE,
-    project_id: process.env.GOOGLE_CREDENTIALS_PROJECT_ID,
-    private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
-    // private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-    private_key: normalizePrivateKey(process.env.GOOGLE_PRIVATE_KEY),
-    client_email: process.env.GOOGLE_CLIENT_EMAIL,
-    client_id: process.env.GOOGLE_CLIENT_ID,
-    auth_uri: process.env.GOOGLE_AUTH_URI,
-    token_uri: process.env.GOOGLE_TOKEN_URI,
-    auth_provider_x509_cert_url: process.env.GOOGLE_AUTH_PROVIDER_X509_CERT_URL,
-    client_x509_cert_url: process.env.GOOGLE_CLIENT_X509_CERT_URL,
-    universe_domain: process.env.GOOGLE_UNIVERSE_DOMAIN,
-  };
-
-  // Log sanitized credentials for debugging
-  console.log('Google Cloud Credentials:', {
-    type: credentials.type,
-    project_id: credentials.project_id,
-    client_email: credentials.client_email,
-    // Do not log sensitive information like private key
-  });
-
-  return credentials;
-}
-
-// Create Storage instance with robust error handling
-function createGoogleStorage() {
-  try {
-    // Prepare and validate credentials
-    const credentials = prepareCredentials();
-    validateCredentials(credentials);
-
-    // Create Storage instance
-    const storageGoogle = new Storage({ 
-      credentials,
-      projectId: credentials.project_id 
-    });
-
-    // Verify storage connection
-    async function verifyStorageConnection() {
-      try {
-        // List buckets to test connection
-        const [buckets] = await storageGoogle.getBuckets();
-        console.log('Successfully connected to Google Cloud Storage');
-        console.log('Available Buckets:', buckets.map(bucket => bucket.name));
-      } catch (connectionError:any) {
-        console.error('Google Cloud Storage Connection Error:', {
-          message: connectionError.message,
-          code: connectionError.code,
-          details: connectionError.details
-        });
-        throw new Error(`Storage connection failed: ${connectionError.message}`);
-      }
-    }
-
-    // Optional: Verify connection
-    verifyStorageConnection().catch(console.error);
-
-    return storageGoogle;
-  } catch (error:any) {
-    console.error('Google Cloud Storage Initialization Error:', {
-      message: error.message,
-      stack: error.stack
-    });
-    throw error;
-  }
-}
-
-// Create and export Storage instance
-const storageGoogle = createGoogleStorage();
+const credentials = {
+  type: process.env.GOOGLE_CREDENTIALS_TYPE,
+  project_id: process.env.GOOGLE_CREDENTIALS_PROJECT_ID,
+  private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
+  private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+  client_email: process.env.GOOGLE_CLIENT_EMAIL,
+  client_id: process.env.GOOGLE_CLIENT_ID,
+  auth_uri: process.env.GOOGLE_AUTH_URI,
+  token_uri: process.env.GOOGLE_TOKEN_URI,
+  auth_provider_x509_cert_url: process.env.GOOGLE_AUTH_PROVIDER_X509_CERT_URL,
+  client_x509_cert_url: process.env.GOOGLE_CLIENT_X509_CERT_URL,
+  universe_domain: process.env.GOOGLE_UNIVERSE_DOMAIN,
+};
 
 // Comprehensive Redis Configuration
-export const redisHost = 'redis-stack';
+export const redisHost = "redis-stack";
 export const redisPort = 6379;
 
 const redisConfig = {
@@ -170,46 +54,45 @@ const redisConfig = {
 export const redis = new Redis(redisConfig);
 
 // Detailed Redis Event Handlers
-redis.on('connect', () => {
-  console.log('Redis: Successfully connected');
+redis.on("connect", () => {
+  console.log("Redis: Successfully connected");
 });
 
-redis.on('ready', () => {
-  console.log('Redis: Connection is ready');
+redis.on("ready", () => {
+  console.log("Redis: Connection is ready");
 });
 
-redis.on('error', (err: any) => {
-  console.error('Redis Connection Error:', {
+redis.on("error", (err: any) => {
+  console.error("Redis Connection Error:", {
     message: err.message,
     code: err.code,
     address: err.address,
     port: err.port,
-    stack: err.stack
+    stack: err.stack,
   });
 });
 
-redis.on('close', () => {
-  console.warn('Redis connection closed');
+redis.on("close", () => {
+  console.warn("Redis connection closed");
 });
 
 // Comprehensive Connection Test
 async function testRedisConnection() {
   try {
-    console.log('Attempting Redis connection test...');
-    
+    console.log("Attempting Redis connection test...");
+
     // Basic connection check
     await redis.ping();
-    console.log('Redis Ping successful');
+    console.log("Redis Ping successful");
 
     // Additional diagnostics
     const info = await redis.info();
-    console.log('Redis Server Info:', {
+    console.log("Redis Server Info:", {
       version: info.match(/redis_version:(\S+)/)?.[1],
-      mode: info.match(/redis_mode:(\S+)/)?.[1]
+      mode: info.match(/redis_mode:(\S+)/)?.[1],
     });
-
   } catch (error) {
-    console.error('Comprehensive Redis Connection Test Failed:', error);
+    console.error("Comprehensive Redis Connection Test Failed:", error);
   }
 }
 
@@ -224,10 +107,10 @@ const audioProcessingQueue = new Queue("audio-processing", {
   defaultJobOptions: {
     attempts: 3,
     backoff: {
-      type: 'exponential',
-      delay: 1000
-    }
-  }
+      type: "exponential",
+      delay: 1000,
+    },
+  },
 });
 
 // Queue Events with Enhanced Logging
@@ -235,11 +118,18 @@ export const eventAudioProcessing = new QueueEvents("audio-processing", {
   connection: {
     host: redisHost,
     port: redisPort,
-  }
+  },
 });
 
 // Google Cloud Storage setup
-// const storageGoogle = new Storage({ credentials });
+const storageGoogle = new Storage({ credentials });
+
+try {
+  await storageGoogle.bucket(process.env.BUCKET_NAME as string).getFiles();
+} catch (error:any) {
+  console.error('Google Cloud Storage Connection Error:', error);
+  throw new Error(`Storage connection failed: ${error.message}`);
+}
 
 // Async initialization
 async function initializeServices() {
@@ -248,12 +138,11 @@ async function initializeServices() {
     await testRedisConnection();
 
     // Optional: Additional startup checks
-    console.log('Checking Queue Connection...');
-    await audioProcessingQueue.add('startup-check', { check: true });
-    console.log('Startup queue job added successfully');
-
+    console.log("Checking Queue Connection...");
+    await audioProcessingQueue.add("startup-check", { check: true });
+    console.log("Startup queue job added successfully");
   } catch (error) {
-    console.error('Service Initialization Failed:', error);
+    console.error("Service Initialization Failed:", error);
     // Optionally exit or implement retry logic
     // process.exit(1);
   }
@@ -263,12 +152,9 @@ async function initializeServices() {
 initializeServices().catch(console.error);
 
 // Error Handler for Unhandled Rejections
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
 });
 
 // Export key services
-export { 
-  audioProcessingQueue, 
-  storageGoogle, 
-};
+export { audioProcessingQueue, storageGoogle };
