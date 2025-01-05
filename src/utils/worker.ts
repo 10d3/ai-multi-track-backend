@@ -206,23 +206,20 @@ class AudioProcessor {
   
     const bgDuration = await this.getAudioDuration(backgroundTrack);
   
-    // Process background track with reduced bass
+    // Process background track with just volume reduction
     const processedBgPath = await this.createTempPath("processed_bg", "wav");
     await execAsync(
-      `ffmpeg -i "${backgroundTrack}" -af "volume=0.3,highpass=f=150,lowpass=f=1000" -ar 44100 -y "${processedBgPath}"`
+      `ffmpeg -i "${backgroundTrack}" -af "volume=0.2" -ar 44100 -y "${processedBgPath}"`
     );
   
-    // Pre-process speech files with normalized volume and reduced bass
+    // Process speech files - just sample rate conversion
     const processedSpeechFiles = await Promise.all(
       speechFiles.map(async (file, index) => {
         const outputPath = await this.createTempPath(
           `processed_speech_${index}`,
           "wav"
         );
-        // Add highpass filter to reduce bass
-        await execAsync(
-          `ffmpeg -i "${file}" -af "volume=1.5,highpass=f=150,dynaudnorm=p=0.95:m=15:s=10" -ar 44100 -y "${outputPath}"`
-        );
+        await execAsync(`ffmpeg -i "${file}" -ar 44100 -y "${outputPath}"`);
         return outputPath;
       })
     );
@@ -237,16 +234,15 @@ class AudioProcessor {
     const speechDuration = lastEnd - firstStart;
     const scaleFactor = (bgDuration * 0.98) / speechDuration;
   
-    // Add input files and create delays
+    // Add input files and create precise delays
     for (let i = 0; i < transcript.length; i++) {
       inputs += `-i "${processedSpeechFiles[i]}" `;
       
       const relativeStart = transcript[i].start - firstStart;
       const scaledDelay = Math.round(relativeStart * scaleFactor * 1000);
       
-      // Add highpass filter to further reduce bass
-      filterComplex += `[${i + 1}:a]volume=1.5,highpass=f=150,dynaudnorm=p=0.95:m=15:s=10[norm${i}];`;
-      filterComplex += `[norm${i}]atrim=0,asetpts=PTS-STARTPTS[adj${i}];`;
+      // Simple trim and delay without any filters
+      filterComplex += `[${i + 1}:a]atrim=0,asetpts=PTS-STARTPTS[adj${i}];`;
       filterComplex += `[adj${i}]adelay=${scaledDelay}|${scaledDelay}[s${i}];`;
     }
   
@@ -257,25 +253,8 @@ class AudioProcessor {
       overlays += `[s${i}]`;
     }
   
-    // Mix with adjusted weights
-    filterComplex += `${overlays}amix=inputs=${transcript.length + 1}:weights='1 ${Array(transcript.length).fill('2').join(' ')}'[premix];`;
-  
-    // Final processing chain with reduced bass emphasis
-    filterComplex += 
-      `[premix]` +
-      // Initial normalization
-      `dynaudnorm=p=0.95:m=15:s=10:g=3,` +
-      // EQ adjustments with reduced bass
-      `highpass=f=150,` + // Cut very low frequencies
-      `equalizer=f=80:t=q:w=200:g=-12,` + // Significantly reduce sub-bass
-      `equalizer=f=150:t=q:w=200:g=-6,` + // Reduce low bass
-      `equalizer=f=300:t=q:w=200:g=-3,` + // Slightly reduce upper bass
-      `equalizer=f=1000:t=q:w=200:g=3,` + // Slight boost to mids
-      `equalizer=f=3000:t=q:w=200:g=2,` + // Slight boost to highs
-      `equalizer=f=6000:t=q:w=200:g=1,` + // Minimal boost to very highs
-      // Final normalization and compression
-      `dynaudnorm=p=0.95:m=15:s=10:g=3,` +
-      `compand=attacks=0.1:decays=0.5:points=-80/-80|-50/-50|-40/-30|-30/-20|-20/-10|-10/-5|-5/0|0/0[out]`;
+    // Simple mix with background lowered
+    filterComplex += `${overlays}amix=inputs=${transcript.length + 1}:weights='0.5 ${Array(transcript.length).fill('1.5').join(' ')}'[out]`;
   
     const finalOutputPath = await this.createTempPath("final_output", "wav");
     const ffmpegCmd = `ffmpeg ${inputs} -filter_complex "${filterComplex}" -map "[out]" -c:a pcm_s16le -t ${bgDuration} -y "${finalOutputPath}"`;
