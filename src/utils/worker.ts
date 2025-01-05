@@ -206,20 +206,23 @@ class AudioProcessor {
   
     const bgDuration = await this.getAudioDuration(backgroundTrack);
   
-    // Process background track
+    // Process background track with consistent volume
     const processedBgPath = await this.createTempPath("processed_bg", "wav");
     await execAsync(
       `ffmpeg -i "${backgroundTrack}" -af "volume=0.3,lowpass=f=1000" -ar 44100 -y "${processedBgPath}"`
     );
   
-    // Process speech files
+    // Pre-process speech files with normalized volume
     const processedSpeechFiles = await Promise.all(
       speechFiles.map(async (file, index) => {
         const outputPath = await this.createTempPath(
           `processed_speech_${index}`,
           "wav"
         );
-        await execAsync(`ffmpeg -i "${file}" -ar 44100 -y "${outputPath}"`);
+        // Add volume normalization to speech processing
+        await execAsync(
+          `ffmpeg -i "${file}" -af "volume=1.5,dynaudnorm=p=0.95:m=15:s=10" -ar 44100 -y "${outputPath}"`
+        );
         return outputPath;
       })
     );
@@ -232,24 +235,21 @@ class AudioProcessor {
     const firstStart = transcript[0].start;
     const lastEnd = transcript[transcript.length - 1].end as number;
     const speechDuration = lastEnd - firstStart;
-    
-    // Calculate scale factor to fit within background duration
-    // Leave a small buffer at the end (0.98) to ensure we don't exceed bgDuration
     const scaleFactor = (bgDuration * 0.98) / speechDuration;
   
     // Add input files and create delays
     for (let i = 0; i < transcript.length; i++) {
       inputs += `-i "${processedSpeechFiles[i]}" `;
       
-      // Calculate scaled delay time relative to the first speech
       const relativeStart = transcript[i].start - firstStart;
       const scaledDelay = Math.round(relativeStart * scaleFactor * 1000);
       
-      filterComplex += `[${i + 1}:a]atrim=0,asetpts=PTS-STARTPTS[adj${i}];`;
+      // Add volume stabilization to each speech stream
+      filterComplex += `[${i + 1}:a]volume=1.5,dynaudnorm=p=0.95:m=15:s=10[norm${i}];`;
+      filterComplex += `[norm${i}]atrim=0,asetpts=PTS-STARTPTS[adj${i}];`;
       filterComplex += `[adj${i}]adelay=${scaledDelay}|${scaledDelay}[s${i}];`;
     }
   
-    // Background track processing
     filterComplex += `[0:a]apad[bg];`;
     overlays += `[bg]`;
   
@@ -257,22 +257,26 @@ class AudioProcessor {
       overlays += `[s${i}]`;
     }
   
-    // Mix all audio streams
-    filterComplex += `${overlays}amix=inputs=${transcript.length + 1}[mixed];`;
+    // Mix with adjusted weights
+    filterComplex += `${overlays}amix=inputs=${transcript.length + 1}:weights='1 ${Array(transcript.length).fill('2').join(' ')}'[premix];`;
   
-    // Apply audio enhancements
+    // Final processing chain
     filterComplex += 
-      `[mixed]` +
+      `[premix]` +
+      // Normalize before EQ
+      `dynaudnorm=p=0.95:m=15:s=10:g=5,` +
+      // EQ adjustments
       `equalizer=f=80:t=q:w=200:g=-3,` +
       `equalizer=f=300:t=q:w=200:g=-5,` +
       `equalizer=f=1000:t=q:w=200:g=5,` +
       `equalizer=f=3000:t=q:w=200:g=3,` +
       `equalizer=f=6000:t=q:w=200:g=2,` +
-      `dynaudnorm=p=0.95:m=15,` +
-      `compand=attacks=0:points=-80/-80|-50/-50|-40/-30|-30/-20|-20/-10|-10/-5|-5/0|0/0[out]`;
+      // Final volume stabilization
+      `dynaudnorm=p=0.95:m=15:s=10:g=5,` +
+      // Gentle compression
+      `compand=attacks=0.1:decays=0.5:points=-80/-80|-50/-50|-40/-30|-30/-20|-20/-10|-10/-5|-5/0|0/0[out]`;
   
     const finalOutputPath = await this.createTempPath("final_output", "wav");
-    // Ensure exact duration match with -t parameter
     const ffmpegCmd = `ffmpeg ${inputs} -filter_complex "${filterComplex}" -map "[out]" -c:a pcm_s16le -t ${bgDuration} -y "${finalOutputPath}"`;
   
     await execAsync(ffmpegCmd);
