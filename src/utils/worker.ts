@@ -4,7 +4,7 @@ import { createReadStream } from "fs";
 import path from "path";
 import { promisify } from "util";
 import { exec } from "child_process";
-import { redis, redisHost, redisPassword, redisPort, storageGoogle } from "./queue";
+import { redis, redisHost, redisPassword, redisPort, redisUserName, storageGoogle } from "./queue";
 import { v4 as uuidv4 } from "uuid";
 import { downloadAudioFile } from "./utils";
 import dotenv from "dotenv";
@@ -464,6 +464,7 @@ const worker = new Worker<JobData>(
     connection: {
       host: redisHost,
       port: redisPort,
+      username:redisUserName,
       password:redisPassword,
       maxRetriesPerRequest: null,
       connectTimeout: 5000,
