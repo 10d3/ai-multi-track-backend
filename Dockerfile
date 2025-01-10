@@ -28,4 +28,4 @@ EXPOSE 8080
 
 # Définir la commande pour démarrer l'application
 # CMD ["bun", "dev", "worker"]
-CMD ["sh", "-c", "bun dev & bun worker"]
+CMD ["sh", "-c", "bun dev & bun worker & bun websocket"]
