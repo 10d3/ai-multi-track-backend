@@ -262,59 +262,43 @@ class AudioProcessor {
     await this.verifyFile(backgroundTrack);
     await Promise.all(speechFiles.map((file) => this.verifyFile(file)));
 
-    // Analyze background track
-    const bgAnalysis = await this.analyzeAudio(backgroundTrack);
+    const bgDuration = await this.getAudioDuration(backgroundTrack);
 
-    // Process background track with analyzed characteristics
+    // Process background track
     const processedBgPath = await this.createTempPath("processed_bg", "wav");
-    const bgVolumeAdjust = Math.min(-10, -bgAnalysis.loudness.integrated);
-
     await execAsync(
-      `ffmpeg -i "${backgroundTrack}" -af "volume=${bgVolumeAdjust}dB,lowpass=f=1000" ` +
-        `-ar ${bgAnalysis.format.sampleRate} -y "${processedBgPath}"`
+      `ffmpeg -i "${backgroundTrack}" -af "volume=0.3" -ar 44100 -y "${processedBgPath}"`
     );
 
-    // Process speech files with matching characteristics
+    // Process speech files
     const processedSpeechFiles = await Promise.all(
       speechFiles.map(async (file, index) => {
-        const speechAnalysis = await this.analyzeAudio(file);
         const outputPath = await this.createTempPath(
           `processed_speech_${index}`,
           "wav"
         );
-
-        // Calculate loudness adjustment
-        const loudnessDiff =
-          bgAnalysis.loudness.integrated - speechAnalysis.loudness.integrated;
-
+        // Add slight volume boost to speech
         await execAsync(
-          `ffmpeg -i "${file}" -af ` +
-            `"volume=${loudnessDiff}dB,` +
-            `compand=attacks=0.03:decays=0.1:points=-90/-90|-70/-70|-60/-60|-50/-50|-40/-40|-30/-20|-20/-10|-10/-5|-5/0|0/0,` +
-            `equalizer=f=100:t=h:w=200:g=-2,` +
-            `equalizer=f=500:t=h:w=200:g=-1,` +
-            `equalizer=f=1500:t=h:w=200:g=2,` +
-            `equalizer=f=5000:t=h:w=200:g=1" ` +
-            `-ar ${bgAnalysis.format.sampleRate} -y "${outputPath}"`
+          `ffmpeg -i "${file}" -af "volume=2" -ar 44100 -y "${outputPath}"`
         );
         return outputPath;
       })
     );
 
+    let filterComplex = ``;
+    let inputs = `-i "${processedBgPath}" `;
+    let overlays = ``;
+
     // Calculate timing adjustments
     const firstStart = transcript[0].start;
     const lastEnd = transcript[transcript.length - 1].end as number;
     const speechDuration = lastEnd - firstStart;
-    const scaleFactor = (bgAnalysis.duration * 0.98) / speechDuration;
+    const scaleFactor = (bgDuration * 0.98) / speechDuration;
 
-    // Build filter complex
-    let filterComplex = "";
-    let inputs = `-i "${processedBgPath}" `;
-    let overlays = "";
-
-    // Add input files and create delays
+    // Add input files and create precise delays
     for (let i = 0; i < transcript.length; i++) {
       inputs += `-i "${processedSpeechFiles[i]}" `;
+
       const relativeStart = transcript[i].start - firstStart;
       const scaledDelay = Math.round(relativeStart * scaleFactor * 1000);
 
@@ -322,7 +306,6 @@ class AudioProcessor {
       filterComplex += `[adj${i}]adelay=${scaledDelay}|${scaledDelay}[s${i}];`;
     }
 
-    // Background track processing
     filterComplex += `[0:a]apad[bg];`;
     overlays += `[bg]`;
 
@@ -330,52 +313,18 @@ class AudioProcessor {
       overlays += `[s${i}]`;
     }
 
-    // Mix with improved controls
+    // Mix with higher overall volume
     filterComplex += `${overlays}amix=inputs=${
       transcript.length + 1
-    }:duration=longest:dropout_transition=0.5[mixed];`;
+    }:weights='0.5 ${Array(transcript.length).fill("2").join(" ")}'[mixed];`;
 
-    // Enhanced final processing chain
-    filterComplex +=
-      `[mixed]` +
-      `equalizer=f=80:t=q:w=200:g=-3,` +
-      `equalizer=f=300:t=q:w=200:g=-5,` +
-      `equalizer=f=1000:t=q:w=200:g=5,` +
-      `equalizer=f=3000:t=q:w=200:g=3,` +
-      `equalizer=f=6000:t=q:w=200:g=2,` +
-      `dynaudnorm=p=0.95:m=15:g=3:f=250,` +
-      `compand=attacks=0.03:decays=0.1:points=-90/-90|-70/-70|-60/-60|-50/-50|-40/-40|-30/-20|-20/-10|-10/-5|-5/0|0/0[out]`;
+    // Add final volume boost
+    filterComplex += `[mixed]volume=2[out]`;
 
     const finalOutputPath = await this.createTempPath("final_output", "wav");
-
-    // Execute final combination with precise duration matching
-    const ffmpegCmd =
-      `ffmpeg ${inputs} -filter_complex "${filterComplex}" ` +
-      `-map "[out]" -c:a pcm_s16le ` +
-      `-ar ${bgAnalysis.format.sampleRate} ` +
-      `-t ${bgAnalysis.duration} -y "${finalOutputPath}"`;
+    const ffmpegCmd = `ffmpeg ${inputs} -filter_complex "${filterComplex}" -map "[out]" -c:a pcm_s16le -t ${bgDuration} -y "${finalOutputPath}"`;
 
     await execAsync(ffmpegCmd);
-
-    // Verify final output matches background characteristics
-    const finalAnalysis = await this.analyzeAudio(finalOutputPath);
-    if (
-      Math.abs(
-        finalAnalysis.loudness.integrated - bgAnalysis.loudness.integrated
-      ) > 1
-    ) {
-      // Apply final correction if needed
-      const correctionPath = await this.createTempPath(
-        "final_corrected",
-        "wav"
-      );
-      await execAsync(
-        `ffmpeg -i "${finalOutputPath}" -af "volume=${
-          bgAnalysis.loudness.integrated - finalAnalysis.loudness.integrated
-        }dB" ` + `-y "${correctionPath}"`
-      );
-      return correctionPath;
-    }
 
     return finalOutputPath;
   }
