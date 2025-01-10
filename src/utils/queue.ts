@@ -50,6 +50,7 @@ export const redisPassword = process.env.REDIS_PASSWORD
 const redisConfig = {
   host: redisHost,
   port: redisPort,
+  username:redisUserName,
   password:redisPassword,
   retryStrategy(times: number) {
     const delay = Math.min(times * 50, 2000);
