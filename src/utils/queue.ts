@@ -44,7 +44,7 @@ const credentials = {
 // Comprehensive Redis Configuration
 export const redisHost = process.env.REDIS_HOST;
 export const redisPort = 6379;
-export const redisUserName = process.env.REDIS_USERNAME;
+export const redisUserName = "default";
 export const redisPassword = process.env.REDIS_PASSWORD
 
 const redisConfig = {
