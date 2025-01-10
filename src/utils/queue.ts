@@ -47,69 +47,69 @@ export const redisPort = 6379;
 export const redisUserName = "default";
 export const redisPassword = process.env.REDIS_PASSWORD
 
-const redisConfig = {
-  host: redisHost,
-  port: redisPort,
-  username:redisUserName,
-  password:redisPassword,
-  retryStrategy(times: number) {
-    const delay = Math.min(times * 50, 2000);
-    console.log(`Redis Retry attempt ${times}, waiting ${delay}ms`);
-    return delay;
-  },
-  maxRetriesPerRequest: null,
-  connectTimeout: 5000,
-  lazyConnect: false,
-  enableReadyCheck: true,
-  // Optional: Add authentication if needed
-  // password: process.env.REDIS_PASSWORD,
-};
+// const redisConfig = {
+//   host: redisHost,
+//   port: redisPort,
+//   username:redisUserName,
+//   password:redisPassword,
+//   retryStrategy(times: number) {
+//     const delay = Math.min(times * 50, 2000);
+//     console.log(`Redis Retry attempt ${times}, waiting ${delay}ms`);
+//     return delay;
+//   },
+//   maxRetriesPerRequest: null,
+//   connectTimeout: 5000,
+//   lazyConnect: false,
+//   enableReadyCheck: true,
+//   // Optional: Add authentication if needed
+//   // password: process.env.REDIS_PASSWORD,
+// };
 
-// Comprehensive Redis Connection
-export const redis = new Redis(redisConfig);
+// // Comprehensive Redis Connection
+// export const redis = new Redis(redisConfig);
 
-// Detailed Redis Event Handlers
-redis.on("connect", () => {
-  console.log("Redis: Successfully connected");
-});
+// // Detailed Redis Event Handlers
+// redis.on("connect", () => {
+//   console.log("Redis: Successfully connected");
+// });
 
-redis.on("ready", () => {
-  console.log("Redis: Connection is ready");
-});
+// redis.on("ready", () => {
+//   console.log("Redis: Connection is ready");
+// });
 
-redis.on("error", (err: any) => {
-  console.error("Redis Connection Error:", {
-    message: err.message,
-    code: err.code,
-    address: err.address,
-    port: err.port,
-    stack: err.stack,
-  });
-});
+// redis.on("error", (err: any) => {
+//   console.error("Redis Connection Error:", {
+//     message: err.message,
+//     code: err.code,
+//     address: err.address,
+//     port: err.port,
+//     stack: err.stack,
+//   });
+// });
 
-redis.on("close", () => {
-  console.warn("Redis connection closed");
-});
+// redis.on("close", () => {
+//   console.warn("Redis connection closed");
+// });
 
-// Comprehensive Connection Test
-async function testRedisConnection() {
-  try {
-    console.log("Attempting Redis connection test...");
+// // Comprehensive Connection Test
+// async function testRedisConnection() {
+//   try {
+//     console.log("Attempting Redis connection test...");
 
-    // Basic connection check
-    await redis.ping();
-    console.log("Redis Ping successful");
+//     // Basic connection check
+//     await redis.ping();
+//     console.log("Redis Ping successful");
 
-    // Additional diagnostics
-    const info = await redis.info();
-    console.log("Redis Server Info:", {
-      version: info.match(/redis_version:(\S+)/)?.[1],
-      mode: info.match(/redis_mode:(\S+)/)?.[1],
-    });
-  } catch (error) {
-    console.error("Comprehensive Redis Connection Test Failed:", error);
-  }
-}
+//     // Additional diagnostics
+//     const info = await redis.info();
+//     console.log("Redis Server Info:", {
+//       version: info.match(/redis_version:(\S+)/)?.[1],
+//       mode: info.match(/redis_mode:(\S+)/)?.[1],
+//     });
+//   } catch (error) {
+//     console.error("Comprehensive Redis Connection Test Failed:", error);
+//   }
+// }
 
 // Create Queue with Enhanced Configuration
 const audioProcessingQueue = new Queue("audio-processing", {
@@ -150,29 +150,29 @@ const storageGoogle = new Storage({ credentials });
 // }
 
 // Async initialization
-async function initializeServices() {
-  try {
-    // Test Redis Connection
-    await testRedisConnection();
+// async function initializeServices() {
+//   try {
+//     // Test Redis Connection
+//     await testRedisConnection();
 
-    // Optional: Additional startup checks
-    console.log("Checking Queue Connection...");
-    await audioProcessingQueue.add("startup-check", { check: true });
-    console.log("Startup queue job added successfully");
-  } catch (error) {
-    console.error("Service Initialization Failed:", error);
-    // Optionally exit or implement retry logic
-    // process.exit(1);
-  }
-}
+//     // Optional: Additional startup checks
+//     console.log("Checking Queue Connection...");
+//     await audioProcessingQueue.add("startup-check", { check: true });
+//     console.log("Startup queue job added successfully");
+//   } catch (error) {
+//     console.error("Service Initialization Failed:", error);
+//     // Optionally exit or implement retry logic
+//     // process.exit(1);
+//   }
+// }
 
-// Initialize on module import
-initializeServices().catch(console.error);
+// // Initialize on module import
+// initializeServices().catch(console.error);
 
-// Error Handler for Unhandled Rejections
-process.on("unhandledRejection", (reason, promise) => {
-  console.error("Unhandled Rejection at:", promise, "reason:", reason);
-});
+// // Error Handler for Unhandled Rejections
+// process.on("unhandledRejection", (reason, promise) => {
+//   console.error("Unhandled Rejection at:", promise, "reason:", reason);
+// });
 
 // Export key services
 export { audioProcessingQueue, storageGoogle };

@@ -5,7 +5,6 @@ import path from "path";
 import { promisify } from "util";
 import { exec } from "child_process";
 import {
-  redis,
   redisHost,
   redisPassword,
   redisPort,
