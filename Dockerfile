@@ -4,6 +4,7 @@ FROM oven/bun:latest
 # Définir le répertoire de travail
 WORKDIR /app
 
+COPY package*.json ./
 # Copier les fichiers du projet
 COPY . /app/
 
@@ -24,7 +25,7 @@ RUN pip3 install spleeter
 RUN pip install -r requirements.txt
 
 # Exposer le port pour l'application
-EXPOSE 8080
+EXPOSE 8090
 
 # Définir la commande pour démarrer l'application
 # CMD ["bun", "dev", "worker"]

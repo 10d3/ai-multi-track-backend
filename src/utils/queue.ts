@@ -3,6 +3,7 @@ import path from "path";
 import { Storage } from "@google-cloud/storage";
 import dotenv from "dotenv";
 import { Redis } from "ioredis";
+import { password } from "bun";
 
 dotenv.config();
 
@@ -41,12 +42,14 @@ const credentials = {
 };
 
 // Comprehensive Redis Configuration
-export const redisHost = process.env.WORKER_URL;
+export const redisHost = process.env.REDIS_HOST;
 export const redisPort = 6379;
+export const redisPassword = process.env.REDIS_PASSWORD
 
 const redisConfig = {
   host: redisHost,
   port: redisPort,
+  password:redisPassword,
   retryStrategy(times: number) {
     const delay = Math.min(times * 50, 2000);
     console.log(`Redis Retry attempt ${times}, waiting ${delay}ms`);
