@@ -135,6 +135,8 @@ export const eventAudioProcessing = new QueueEvents("audio-processing", {
   connection: {
     host: redisHost,
     port: redisPort,
+    username:redisUserName,
+    password:redisPassword
   },
 });
 
