@@ -116,6 +116,7 @@ const audioProcessingQueue = new Queue("audio-processing", {
     host: redisHost,
     port: redisPort,
     username:redisUserName,
+    password:redisPassword,
     maxRetriesPerRequest: null,
     connectTimeout: 5000,
   },
