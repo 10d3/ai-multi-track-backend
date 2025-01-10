@@ -41,7 +41,7 @@ const credentials = {
 };
 
 // Comprehensive Redis Configuration
-export const redisHost = "redis-stack";
+export const redisHost = process.env.WORKER_URL;
 export const redisPort = 6379;
 
 const redisConfig = {
