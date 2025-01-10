@@ -4,7 +4,14 @@ import { createReadStream } from "fs";
 import path from "path";
 import { promisify } from "util";
 import { exec } from "child_process";
-import { redis, redisHost, redisPassword, redisPort, redisUserName, storageGoogle } from "./queue";
+import {
+  redis,
+  redisHost,
+  redisPassword,
+  redisPort,
+  redisUserName,
+  storageGoogle,
+} from "./queue";
 import { v4 as uuidv4 } from "uuid";
 import { downloadAudioFile } from "./utils";
 import dotenv from "dotenv";
@@ -197,35 +204,54 @@ class AudioProcessor {
   }
 
   async analyzeAudio(filePath: string) {
-    // Get loudness information
-    const loudnessInfo = await execAsync(
-      `ffmpeg -i "${filePath}" -af "loudnorm=print_format=json" -f null - 2>&1`
-    );
-    // Parse the loudness information from stdout
-    const loudnessData = JSON.parse(loudnessInfo.stdout);
+    try {
+      // Get loudness information
+      const loudnessInfo = await execAsync(
+        `ffmpeg -i "${filePath}" -af "loudnorm=print_format=json" -f null - 2>&1`
+      );
 
-    // Get format information
-    const formatInfo = await execAsync(
-      `ffprobe -v quiet -print_format json -show_streams -show_format "${filePath}"`
-    );
-    const audioInfo = JSON.parse(formatInfo.stdout);
-    const audioStream = audioInfo.streams.find(
-      (s: any) => s.codec_type === "audio"
-    );
+      // Check for errors in the FFmpeg output
+      if (loudnessInfo.stderr) {
+        console.error("FFmpeg error:", loudnessInfo.stderr);
+        throw new Error("Error getting loudness information");
+      }
 
-    return {
-      loudness: {
-        integrated: parseFloat(loudnessData.input_i || "0"),
-        truePeak: parseFloat(loudnessData.input_tp || "0"),
-        range: parseFloat(loudnessData.input_lra || "0"),
-      },
-      format: {
-        sampleRate: parseInt(audioStream.sample_rate),
-        channels: parseInt(audioStream.channels),
-        codec: audioStream.codec_name,
-      },
-      duration: parseFloat(audioInfo.format.duration),
-    };
+      // Parse the loudness information from stdout
+      const loudnessData = JSON.parse(loudnessInfo.stdout);
+
+      // Get format information
+      const formatInfo = await execAsync(
+        `ffprobe -v quiet -print_format json -show_streams -show_format "${filePath}"`
+      );
+
+      // Check for errors in the FFprobe output
+      if (formatInfo.stderr) {
+        console.error("FFprobe error:", formatInfo.stderr);
+        throw new Error("Error getting format information");
+      }
+
+      const audioInfo = JSON.parse(formatInfo.stdout);
+      const audioStream = audioInfo.streams.find(
+        (s: any) => s.codec_type === "audio"
+      );
+
+      return {
+        loudness: {
+          integrated: parseFloat(loudnessData.input_i || "0"),
+          truePeak: parseFloat(loudnessData.input_tp || "0"),
+          range: parseFloat(loudnessData.input_lra || "0"),
+        },
+        format: {
+          sampleRate: parseInt(audioStream.sample_rate),
+          channels: parseInt(audioStream.channels),
+          codec: audioStream.codec_name,
+        },
+        duration: parseFloat(audioInfo.format.duration),
+      };
+    } catch (error) {
+      console.error("Error analyzing audio:", error);
+      throw error; // Rethrow the error after logging
+    }
   }
 
   async combineAllSpeechWithBackground(
@@ -464,8 +490,8 @@ const worker = new Worker<JobData>(
     connection: {
       host: redisHost,
       port: redisPort,
-      username:redisUserName,
-      password:redisPassword,
+      username: redisUserName,
+      password: redisPassword,
       maxRetriesPerRequest: null,
       connectTimeout: 5000,
     },
