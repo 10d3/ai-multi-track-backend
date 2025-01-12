@@ -4,18 +4,19 @@ import { v4 as uuidv4 } from "uuid";
 import path from 'path';
 import { exec } from 'child_process';
 import fs from 'fs';
+import { storageGoogle } from '../utils/queue';
 
 const router = express.Router();
 const auth = require('../middleware/auth');
 
-const storageGoogle = new Storage({
-  keyFilename: path.join(
-    __dirname,
-    "..",
-    "config",
-    "endless-bolt-430416-h3-e0a89a12879b.json"
-  ),
-});
+// const storageGoogle = new Storage({
+//   keyFilename: path.join(
+//     __dirname,
+//     "..",
+//     "config",
+//     "endless-bolt-430416-h3-e0a89a12879b.json"
+//   ),
+// });
 
 router.post("/", async (req, res) => {
   console.log(req.body);
