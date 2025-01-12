@@ -33,7 +33,7 @@ app.use("/api/combine-audio", combineAudioRoutes);
 app.use("/api/sign-up", signUpRoutes);
 app.use("/api/login", loginRoutes);
 app.use("/api/refresh-token", refreshTokenRoutes);
-app.use("/api/convert-to-audio", auth, convertToAudioRoutes);
+app.use("/api/convert-to-audio", convertToAudioRoutes);
 app.use("/api/job-status", jobStatusRoutes);
 app.use("/api/test-bull", combineAudioBullRoutes);
 
