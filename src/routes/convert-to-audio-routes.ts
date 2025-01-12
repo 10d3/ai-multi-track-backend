@@ -10,7 +10,7 @@ import mime from "mime-types"; // to check file types
 import { storageGoogle } from "../utils/queue";
 
 const router = express.Router();
-const auth = require("../middleware/auth");
+// const auth = require("../middleware/auth");
 const execPromise = promisify(exec);
 
 // Initialize Google Cloud Storage
@@ -28,7 +28,7 @@ const bucketName = "ai-multi-track"; // Replace with your Google Cloud Storage b
 // Supported video formats
 const supportedFormats = ["video/mp4", "video/x-matroska"]; // .mp4 and .mkv
 
-router.post("/", auth, async (req, res) => {
+router.post("/", async (req, res) => {
   const { videoFilePath } = req.body;
 
   if (!videoFilePath) {
