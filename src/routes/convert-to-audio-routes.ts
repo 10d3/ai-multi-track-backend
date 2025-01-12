@@ -7,20 +7,21 @@ import { promisify } from "util";
 import { Storage } from "@google-cloud/storage";
 import { downloadAudioFile } from "../utils/utils";
 import mime from "mime-types"; // to check file types
+import { storageGoogle } from "../utils/queue";
 
 const router = express.Router();
 const auth = require("../middleware/auth");
 const execPromise = promisify(exec);
 
 // Initialize Google Cloud Storage
-const storageGoogle = new Storage({
-  keyFilename: path.join(
-    __dirname,
-    "..",
-    "config",
-    "endless-bolt-430416-h3-e0a89a12879b.json"
-  ),
-});
+// const storageGoogle = new Storage({
+//   keyFilename: path.join(
+//     __dirname,
+//     "..",
+//     "config",
+//     "endless-bolt-430416-h3-e0a89a12879b.json"
+//   ),
+// });
 
 const bucketName = "ai-multi-track"; // Replace with your Google Cloud Storage bucket name
 
