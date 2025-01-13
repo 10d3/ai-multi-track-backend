@@ -33,3 +33,11 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # Définir la commande pour démarrer l'application
 # CMD ["bun", "dev", "worker"]
 CMD ["sh", "-c", "bun dev & bun worker & bun websocket"]
+
+LABEL traefik.enable=true\
+    traefik.http.middlewares.gzip.compress=true\
+    traefik.http.routers.wss-router.entryPoints=wss\
+    traefik.http.routers.wss-router.rule=Host(`api.sayitai.com`)\
+    traefik.http.routers.wss-router.service=wss-service\
+    traefik.http.routers.wss-router.tls=true \
+    traefik.http.services.wss-service.loadbalancer.server.port=3001
