@@ -1,43 +1,38 @@
-# Utiliser l'image de base oven/bun:latest
+# Base Image
 FROM oven/bun:latest
 
-# Définir le répertoire de travail
+# Set Working Directory
 WORKDIR /app
 
+# Copy Project Files
 COPY package*.json ./
-# Copier les fichiers du projet
-COPY . /app/
+COPY . .
 
-# Installer Python et pip
+# Install System Dependencies
 RUN apt-get update && apt-get install -y python3 python3-pip ffmpeg curl
 
-# Installer les dépendances Node.js avec bun
-RUN bun add @prisma/client prisma
+# Install Dependencies
 RUN bun install
-RUN bun --bunx prisma generate
+RUN bun prisma generate
 
-# Copier le fichier requirements.txt
-COPY requirements.txt .
-
-# Installer les dépendances Python
-# RUN pip install ffmpeg-python
+# Install Python Dependencies
 RUN pip3 install spleeter
-RUN pip install -r requirements.txt
+RUN pip3 install -r requirements.txt
 
-# Exposer le port pour l'application
-EXPOSE 8090
+# Expose WebSocket Port
+EXPOSE 3001
 
+# Health Check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8090/health || exit 1
+    CMD curl -f http://localhost:3001/health || exit 1
 
-# Définir la commande pour démarrer l'application
-# CMD ["bun", "dev", "worker"]
+# Application Start Command
 CMD ["sh", "-c", "bun dev & bun worker & bun websocket"]
 
-LABEL traefik.enable=true\
-    traefik.http.middlewares.gzip.compress=true\
-    traefik.http.routers.wss-router.entryPoints=wss\
-    traefik.http.routers.wss-router.rule=Host(`api.sayitai.com`)\
-    traefik.http.routers.wss-router.service=wss-service\
-    traefik.http.routers.wss-router.tls=true \
-    traefik.http.services.wss-service.loadbalancer.server.port=3001
+# Traefik Labels for WebSocket
+LABEL traefik.enable=true \
+    traefik.http.routers.websocket-router.entryPoints=websecure \
+    traefik.http.routers.websocket-router.rule=Host(`api.sayitai.com`) \
+    traefik.http.routers.websocket-router.tls=true \
+    traefik.http.routers.websocket-router.tls.certresolver=letsencrypt \
+    traefik.http.services.websocket-service.loadbalancer.server.port=3001
