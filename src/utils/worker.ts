@@ -481,7 +481,7 @@ worker.on("completed", async (job) => {
 
   try {
     const response = await axios.post(
-      "http://localhost:3000/api/finish-job-emailing", // or your live URL
+      "https://sayitai.com/api/finish-job-emailing", // or your live URL
       {
         isCompleded: true,
         email,
