@@ -36,6 +36,9 @@ app.use("/api/refresh-token", refreshTokenRoutes);
 app.use("/api/convert-to-audio", convertToAudioRoutes);
 app.use("/api/job-status", jobStatusRoutes);
 app.use("/api/test-bull", combineAudioBullRoutes);
+app.get('/health', (req, res) => {
+  res.status(200).send('OK');
+});
 
 app.use((req, res) => {
   console.log("Header received:", req.headers);

@@ -258,74 +258,85 @@ class AudioProcessor {
     backgroundTrack: string,
     transcript: Transcript[]
   ): Promise<string> {
-    await this.verifyFile(backgroundTrack);
-    await Promise.all(speechFiles.map((file) => this.verifyFile(file)));
+    try {
+      // Analyze the background track
+      const bgAnalysis = await this.analyzeAudio(backgroundTrack);
+      const { loudness, format } = bgAnalysis;
 
-    const bgDuration = await this.getAudioDuration(backgroundTrack);
+      // Verify files
+      await this.verifyFile(backgroundTrack);
+      await Promise.all(speechFiles.map((file) => this.verifyFile(file)));
 
-    // Process background track
-    const processedBgPath = await this.createTempPath("processed_bg", "wav");
-    await execAsync(
-      `ffmpeg -i "${backgroundTrack}" -af "volume=0.3" -ar 44100 -y "${processedBgPath}"`
-    );
+      // Get background duration
+      const bgDuration = await this.getAudioDuration(backgroundTrack);
 
-    // Process speech files
-    const processedSpeechFiles = await Promise.all(
-      speechFiles.map(async (file, index) => {
-        const outputPath = await this.createTempPath(
-          `processed_speech_${index}`,
-          "wav"
-        );
-        // Add slight volume boost to speech
-        await execAsync(
-          `ffmpeg -i "${file}" -af "volume=2" -ar 44100 -y "${outputPath}"`
-        );
-        return outputPath;
-      })
-    );
+      // Process background track
+      const processedBgPath = await this.createTempPath("processed_bg", "wav");
+      await execAsync(
+        `ffmpeg -i "${backgroundTrack}" -af "volume=0.3" -ar 44100 -y "${processedBgPath}"`
+      );
 
-    let filterComplex = ``;
-    let inputs = `-i "${processedBgPath}" `;
-    let overlays = ``;
+      // Process speech files
+      const processedSpeechFiles = await Promise.all(
+        speechFiles.map(async (file, index) => {
+          const outputPath = await this.createTempPath(
+            `processed_speech_${index}`,
+            "wav"
+          );
+          // Add slight volume boost to speech
+          await execAsync(
+            `ffmpeg -i "${file}" -af "volume=2" -ar 44100 -y "${outputPath}"`
+          );
+          return outputPath;
+        })
+      );
 
-    // Calculate timing adjustments
-    const firstStart = transcript[0].start;
-    const lastEnd = transcript[transcript.length - 1].end as number;
-    const speechDuration = lastEnd - firstStart;
-    const scaleFactor = (bgDuration * 0.98) / speechDuration;
+      let filterComplex = ``;
+      let inputs = `-i "${processedBgPath}" `;
+      let overlays = ``;
 
-    // Add input files and create precise delays
-    for (let i = 0; i < transcript.length; i++) {
-      inputs += `-i "${processedSpeechFiles[i]}" `;
+      // Calculate timing adjustments
+      const firstStart = transcript[0].start;
+      const lastEnd = transcript[transcript.length - 1].end as number;
+      const speechDuration = lastEnd - firstStart;
+      const scaleFactor = (bgDuration * 0.98) / speechDuration;
 
-      const relativeStart = transcript[i].start - firstStart;
-      const scaledDelay = Math.round(relativeStart * scaleFactor * 1000);
+      // Add input files and create precise delays
+      for (let i = 0; i < transcript.length; i++) {
+        inputs += `-i "${processedSpeechFiles[i]}" `;
 
-      filterComplex += `[${i + 1}:a]atrim=0,asetpts=PTS-STARTPTS[adj${i}];`;
-      filterComplex += `[adj${i}]adelay=${scaledDelay}|${scaledDelay}[s${i}];`;
+        const relativeStart = transcript[i].start - firstStart;
+        const scaledDelay = Math.round(relativeStart * scaleFactor * 1000);
+
+        filterComplex += `[${i + 1}:a]atrim=0,asetpts=PTS-STARTPTS[adj${i}];`;
+        filterComplex += `[adj${i}]adelay=${scaledDelay}|${scaledDelay}[s${i}];`;
+      }
+
+      filterComplex += `[0:a]apad[bg];`;
+      overlays += `[bg]`;
+
+      for (let i = 0; i < transcript.length; i++) {
+        overlays += `[s${i}]`;
+      }
+
+      // Mix with higher overall volume
+      filterComplex += `${overlays}amix=inputs=${
+        transcript.length + 1
+      }:weights='0.5 ${Array(transcript.length).fill("2").join(" ")}'[mixed];`;
+
+      // Add final volume normalization based on the original background analysis
+      filterComplex += `[mixed]loudnorm=I=${loudness.integrated}:TP=${loudness.truePeak}:LRA=${loudness.range},volume=2[out]`;
+
+      const finalOutputPath = await this.createTempPath("final_output", "wav");
+      const ffmpegCmd = `ffmpeg ${inputs} -filter_complex "${filterComplex}" -map "[out]" -c:a pcm_s16le -t ${bgDuration} -y "${finalOutputPath}"`;
+
+      await execAsync(ffmpegCmd);
+
+      return finalOutputPath;
+    } catch (error) {
+      console.error("Error combining speech and background:", error);
+      throw error; // Rethrow after logging
     }
-
-    filterComplex += `[0:a]apad[bg];`;
-    overlays += `[bg]`;
-
-    for (let i = 0; i < transcript.length; i++) {
-      overlays += `[s${i}]`;
-    }
-
-    // Mix with higher overall volume
-    filterComplex += `${overlays}amix=inputs=${
-      transcript.length + 1
-    }:weights='0.5 ${Array(transcript.length).fill("2").join(" ")}'[mixed];`;
-
-    // Add final volume boost
-    filterComplex += `[mixed]volume=2[out]`;
-
-    const finalOutputPath = await this.createTempPath("final_output", "wav");
-    const ffmpegCmd = `ffmpeg ${inputs} -filter_complex "${filterComplex}" -map "[out]" -c:a pcm_s16le -t ${bgDuration} -y "${finalOutputPath}"`;
-
-    await execAsync(ffmpegCmd);
-
-    return finalOutputPath;
   }
 
   async uploadToStorage(filePath: string): Promise<string> {

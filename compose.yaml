@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  sayitai-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: n4sgg0gkw0g040cog4os4ck8-155640141048
+    restart: unless-stopped
+    labels:
+      traefik.enable: true
+      traefik.http.middlewares.gzip.compress: true
+      traefik.http.routers.wss-router.entryPoints: wss
+      traefik.http.routers.wss-router.rule: Host(`api.sayitai.com`)
+      traefik.http.routers.wss-router.service: wss-service
+      traefik.http.routers.wss-router.tls: true
+      traefik.http.services.wss-service.loadbalancer.server.port: 3001
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
