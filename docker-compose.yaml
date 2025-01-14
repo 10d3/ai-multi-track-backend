@@ -38,5 +38,4 @@ services:
       start_period: 5s
 
     networks:
-      coolify:
-        external: true
+      coolify
