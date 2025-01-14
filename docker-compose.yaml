@@ -36,6 +36,9 @@ services:
       timeout: 10s
       retries: 3
       start_period: 5s
-
     networks:
-      coolify
+      - coolify
+
+networks:
+  coolify:
+    external: true
