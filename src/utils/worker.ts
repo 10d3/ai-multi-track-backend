@@ -222,7 +222,7 @@ class AudioProcessor {
       let loudnessData;
       try {
         loudnessData = JSON.parse(jsonMatch[0]);
-      } catch (e:any) {
+      } catch (e: any) {
         throw new Error("Failed to parse loudness data: " + e.message);
       }
 
@@ -239,7 +239,7 @@ class AudioProcessor {
       let audioInfo;
       try {
         audioInfo = JSON.parse(formatInfo.stdout);
-      } catch (e:any) {
+      } catch (e: any) {
         throw new Error("Failed to parse audio format data: " + e.message);
       }
 
@@ -256,7 +256,10 @@ class AudioProcessor {
         loudness: {
           integrated: parseFloat(loudnessData.input_i || "0"),
           truePeak: parseFloat(loudnessData.input_tp || "0"),
-          range: Math.max(1, Math.min(20, parseFloat(loudnessData.input_lra || "1"))), // Ensure LRA is between 1-20
+          range: Math.max(
+            1,
+            Math.min(20, parseFloat(loudnessData.input_lra || "1"))
+          ), // Ensure LRA is between 1-20
           threshold: parseFloat(loudnessData.input_thresh || "-70"),
           offset: parseFloat(loudnessData.target_offset || "0"),
         },
@@ -269,12 +272,14 @@ class AudioProcessor {
       };
 
       // Validate the parsed values
-      if (isNaN(result.loudness.integrated) || 
-          isNaN(result.loudness.truePeak) || 
-          isNaN(result.loudness.range) ||
-          isNaN(result.format.sampleRate) ||
-          isNaN(result.format.channels) ||
-          isNaN(result.duration)) {
+      if (
+        isNaN(result.loudness.integrated) ||
+        isNaN(result.loudness.truePeak) ||
+        isNaN(result.loudness.range) ||
+        isNaN(result.format.sampleRate) ||
+        isNaN(result.format.channels) ||
+        isNaN(result.duration)
+      ) {
         throw new Error("Invalid audio analysis values detected");
       }
 
@@ -320,15 +325,17 @@ class AudioProcessor {
         throw new Error("Invalid background track duration");
       }
 
+      // Ensure LRA value is valid (between 1 and 20)
       const validLRA = Math.max(1, Math.min(20, speechAnalysis.loudness.range));
-      // Process background track with normalized loudness
+
+      // Process background track with normalized loudness and ensure stereo output
       const processedBgPath = await this.createTempPath("processed_bg", "wav");
       await execAsync(
         `ffmpeg -i "${backgroundTrack}" -af "loudnorm=I=${
           speechAnalysis.loudness.integrated - 10
         }:TP=${
           speechAnalysis.loudness.truePeak - 3
-        }:LRA=${validLRA}" -ar 44100 -y "${processedBgPath}"`
+        }:LRA=${validLRA}" -ar 44100 -ac 2 -y "${processedBgPath}"`
       );
 
       // Process speech files with consistent loudness
@@ -339,17 +346,12 @@ class AudioProcessor {
             "wav"
           );
           await execAsync(
-            `ffmpeg -i "${file}" -af "loudnorm=I=${
-              speechAnalysis.loudness.integrated
-            }:TP=${
-              speechAnalysis.loudness.truePeak
-            }:LRA=${validLRA}" -ar 44100 -y "${outputPath}"`
+            `ffmpeg -i "${file}" -af "loudnorm=I=${speechAnalysis.loudness.integrated}:TP=${speechAnalysis.loudness.truePeak}:LRA=${validLRA}" -ar 44100 -ac 2 -y "${outputPath}"`
           );
           return outputPath;
         })
       );
 
-      // Validate transcript timing
       let filterComplex = ``;
       let inputs = `-i "${processedBgPath}" `;
       let overlays = ``;
@@ -359,6 +361,7 @@ class AudioProcessor {
       const speechDuration = lastEnd - firstStart;
       const scaleFactor = (bgDuration * 0.98) / speechDuration;
 
+      // Add input files and create precise delays
       for (let i = 0; i < transcript.length; i++) {
         inputs += `-i "${processedSpeechFiles[i]}" `;
 
@@ -376,9 +379,15 @@ class AudioProcessor {
         overlays += `[s${i}]`;
       }
 
+      // Use amix with weights to control volume balance
       filterComplex += `${overlays}amix=inputs=${
         transcript.length + 1
-      }:normalize=0[out]`;
+      }:weights=${Array(transcript.length + 1)
+        .fill(1)
+        .join(" ")}[mixed];`;
+
+      // Add final volume adjustment if needed
+      filterComplex += `[mixed]volume=1[out]`;
 
       const finalOutputPath = await this.createTempPath("final_output", "wav");
       const ffmpegCmd = `ffmpeg ${inputs} -filter_complex "${filterComplex}" -map "[out]" -c:a pcm_s16le -t ${bgDuration} -y "${finalOutputPath}"`;
