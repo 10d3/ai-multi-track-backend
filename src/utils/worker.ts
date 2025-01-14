@@ -213,14 +213,15 @@ class AudioProcessor {
         `ffmpeg -i "${filePath}" -af "loudnorm=print_format=json:linear=true:dual_mono=true" -f null - 2>&1`
       );
 
-      if (loudnessInfo.stderr) {
-        console.error("FFmpeg error:", loudnessInfo.stderr);
-        throw new Error("Error getting loudness information");
+      // Extract JSON from FFmpeg output
+      const jsonMatch = loudnessInfo.stdout.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error("Could not find JSON data in FFmpeg output");
       }
 
       let loudnessData;
       try {
-        loudnessData = JSON.parse(loudnessInfo.stdout);
+        loudnessData = JSON.parse(jsonMatch[0]);
       } catch (e:any) {
         throw new Error("Failed to parse loudness data: " + e.message);
       }
@@ -268,14 +269,12 @@ class AudioProcessor {
       };
 
       // Validate the parsed values
-      if (
-        isNaN(result.loudness.integrated) ||
-        isNaN(result.loudness.truePeak) ||
-        isNaN(result.loudness.range) ||
-        isNaN(result.format.sampleRate) ||
-        isNaN(result.format.channels) ||
-        isNaN(result.duration)
-      ) {
+      if (isNaN(result.loudness.integrated) || 
+          isNaN(result.loudness.truePeak) || 
+          isNaN(result.loudness.range) ||
+          isNaN(result.format.sampleRate) ||
+          isNaN(result.format.channels) ||
+          isNaN(result.duration)) {
         throw new Error("Invalid audio analysis values detected");
       }
 
