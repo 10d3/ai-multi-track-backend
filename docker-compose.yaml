@@ -1,1 +1,15 @@
-container_name: n4sgg0gkw0g040cog4os4ck8-153713984346
+version: '3.8'
+
+services:
+  sayitai-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: n4sgg0gkw0g040cog4os4ck8-153713984346
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
