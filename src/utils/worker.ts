@@ -328,7 +328,7 @@ class AudioProcessor {
       // Ensure LRA value is valid (between 1 and 20)
       const validLRA = Math.max(1, Math.min(20, speechAnalysis.loudness.range));
 
-      // Process background track with normalized loudness and ensure stereo output
+      // Process background track with original settings
       const processedBgPath = await this.createTempPath("processed_bg", "wav");
       await execAsync(
         `ffmpeg -i "${backgroundTrack}" -af "loudnorm=I=${
@@ -338,15 +338,16 @@ class AudioProcessor {
         }:LRA=${validLRA}" -ar 44100 -ac 2 -y "${processedBgPath}"`
       );
 
-      // Process speech files with consistent loudness
+      // Process speech files with increased loudness
       const processedSpeechFiles = await Promise.all(
         speechFiles.map(async (file, index) => {
           const outputPath = await this.createTempPath(
             `processed_speech_${index}`,
             "wav"
           );
+          // Add volume boost to speech files
           await execAsync(
-            `ffmpeg -i "${file}" -af "loudnorm=I=${speechAnalysis.loudness.integrated}:TP=${speechAnalysis.loudness.truePeak}:LRA=${validLRA}" -ar 44100 -ac 2 -y "${outputPath}"`
+            `ffmpeg -i "${file}" -af "volume=2.5,loudnorm=I=${speechAnalysis.loudness.integrated}:TP=${speechAnalysis.loudness.truePeak}:LRA=${validLRA}" -ar 44100 -ac 2 -y "${outputPath}"`
           );
           return outputPath;
         })
@@ -379,15 +380,12 @@ class AudioProcessor {
         overlays += `[s${i}]`;
       }
 
-      // Use amix with weights to control volume balance
+      // Use amix with original weights
       filterComplex += `${overlays}amix=inputs=${
         transcript.length + 1
       }:weights=${Array(transcript.length + 1)
         .fill(1)
-        .join(" ")}[mixed];`;
-
-      // Add final volume adjustment if needed
-      filterComplex += `[mixed]volume=1[out]`;
+        .join(" ")}[out]`;
 
       const finalOutputPath = await this.createTempPath("final_output", "wav");
       const ffmpegCmd = `ffmpeg ${inputs} -filter_complex "${filterComplex}" -map "[out]" -c:a pcm_s16le -t ${bgDuration} -y "${finalOutputPath}"`;
@@ -400,7 +398,6 @@ class AudioProcessor {
       throw error;
     }
   }
-
   async uploadToStorage(filePath: string): Promise<string> {
     try {
       await this.verifyFile(filePath);
