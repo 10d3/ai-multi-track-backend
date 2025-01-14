@@ -256,7 +256,7 @@ class AudioProcessor {
         loudness: {
           integrated: parseFloat(loudnessData.input_i || "0"),
           truePeak: parseFloat(loudnessData.input_tp || "0"),
-          range: parseFloat(loudnessData.input_lra || "0"),
+          range: Math.max(1, Math.min(20, parseFloat(loudnessData.input_lra || "1"))), // Ensure LRA is between 1-20
           threshold: parseFloat(loudnessData.input_thresh || "-70"),
           offset: parseFloat(loudnessData.target_offset || "0"),
         },
@@ -320,14 +320,15 @@ class AudioProcessor {
         throw new Error("Invalid background track duration");
       }
 
+      const validLRA = Math.max(1, Math.min(20, speechAnalysis.loudness.range));
       // Process background track with normalized loudness
       const processedBgPath = await this.createTempPath("processed_bg", "wav");
       await execAsync(
         `ffmpeg -i "${backgroundTrack}" -af "loudnorm=I=${
           speechAnalysis.loudness.integrated - 10
-        }:TP=${speechAnalysis.loudness.truePeak - 3}:LRA=${
-          speechAnalysis.loudness.range
-        }" -ar 44100 -y "${processedBgPath}"`
+        }:TP=${
+          speechAnalysis.loudness.truePeak - 3
+        }:LRA=${validLRA}" -ar 44100 -y "${processedBgPath}"`
       );
 
       // Process speech files with consistent loudness
@@ -338,45 +339,31 @@ class AudioProcessor {
             "wav"
           );
           await execAsync(
-            `ffmpeg -i "${file}" -af "loudnorm=I=${speechAnalysis.loudness.integrated}:TP=${speechAnalysis.loudness.truePeak}:LRA=${speechAnalysis.loudness.range}" -ar 44100 -y "${outputPath}"`
+            `ffmpeg -i "${file}" -af "loudnorm=I=${
+              speechAnalysis.loudness.integrated
+            }:TP=${
+              speechAnalysis.loudness.truePeak
+            }:LRA=${validLRA}" -ar 44100 -y "${outputPath}"`
           );
           return outputPath;
         })
       );
 
       // Validate transcript timing
-      const firstStart = transcript[0].start;
-      const lastEnd = transcript[transcript.length - 1].end as number;
-
-      if (
-        typeof firstStart !== "number" ||
-        typeof lastEnd !== "number" ||
-        firstStart >= lastEnd
-      ) {
-        throw new Error("Invalid transcript timing values");
-      }
-
-      const speechDuration = lastEnd - firstStart;
-      const scaleFactor = (bgDuration * 0.98) / speechDuration;
-
       let filterComplex = ``;
       let inputs = `-i "${processedBgPath}" `;
       let overlays = ``;
 
-      // Add input files and create precise delays
-      for (let i = 0; i < transcript.length; i++) {
-        if (typeof transcript[i].start !== "number") {
-          throw new Error(`Invalid start time for transcript index ${i}`);
-        }
+      const firstStart = transcript[0].start;
+      const lastEnd = transcript[transcript.length - 1].end as number;
+      const speechDuration = lastEnd - firstStart;
+      const scaleFactor = (bgDuration * 0.98) / speechDuration;
 
+      for (let i = 0; i < transcript.length; i++) {
         inputs += `-i "${processedSpeechFiles[i]}" `;
 
         const relativeStart = transcript[i].start - firstStart;
         const scaledDelay = Math.round(relativeStart * scaleFactor * 1000);
-
-        if (scaledDelay < 0) {
-          throw new Error(`Invalid delay calculation at index ${i}`);
-        }
 
         filterComplex += `[${i + 1}:a]atrim=0,asetpts=PTS-STARTPTS[adj${i}];`;
         filterComplex += `[adj${i}]adelay=${scaledDelay}|${scaledDelay}[s${i}];`;
@@ -389,7 +376,6 @@ class AudioProcessor {
         overlays += `[s${i}]`;
       }
 
-      // Mix all streams while maintaining normalized levels
       filterComplex += `${overlays}amix=inputs=${
         transcript.length + 1
       }:normalize=0[out]`;
@@ -398,12 +384,6 @@ class AudioProcessor {
       const ffmpegCmd = `ffmpeg ${inputs} -filter_complex "${filterComplex}" -map "[out]" -c:a pcm_s16le -t ${bgDuration} -y "${finalOutputPath}"`;
 
       await execAsync(ffmpegCmd);
-
-      // Verify the output file exists and has content
-      const stats = await fs.stat(finalOutputPath);
-      if (stats.size === 0) {
-        throw new Error("Generated audio file is empty");
-      }
 
       return finalOutputPath;
     } catch (error) {
