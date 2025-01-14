@@ -7,6 +7,29 @@ services:
       dockerfile: Dockerfile
     container_name: n4sgg0gkw0g040cog4os4ck8-153713984346
     restart: unless-stopped
+    labels:
+      - traefik.enable=true
+      - traefik.http.middlewares.gzip.compress=true
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+      - traefik.http.routers.http-0-n4sgg0gkw0g040cog4os4ck8.entryPoints=http
+      - traefik.http.routers.http-0-n4sgg0gkw0g040cog4os4ck8.middlewares=redirect-to-https
+      - traefik.http.routers.http-0-n4sgg0gkw0g040cog4os4ck8.rule=Host(`api.sayitai.com`) && PathPrefix(`/`)
+      - traefik.http.routers.http-0-n4sgg0gkw0g040cog4os4ck8.service=http-0-n4sgg0gkw0g040cog4os4ck8
+      - traefik.http.routers.https-0-n4sgg0gkw0g040cog4os4ck8.entryPoints=https
+      - traefik.http.routers.https-0-n4sgg0gkw0g040cog4os4ck8.middlewares=gzip
+      - traefik.http.routers.https-0-n4sgg0gkw0g040cog4os4ck8.rule=Host(`api.sayitai.com`) && PathPrefix(`/`)
+      - traefik.http.routers.https-0-n4sgg0gkw0g040cog4os4ck8.service=https-0-n4sgg0gkw0g040cog4os4ck8
+      - traefik.http.routers.https-0-n4sgg0gkw0g040cog4os4ck8.tls.certresolver=letsencrypt
+      - traefik.http.routers.https-0-n4sgg0gkw0g040cog4os4ck8.tls=true
+      - traefik.http.services.http-0-n4sgg0gkw0g040cog4os4ck8.loadbalancer.server.port=3001
+      - traefik.http.services.https-0-n4sgg0gkw0g040cog4os4ck8.loadbalancer.server.port=3001
+      - caddy_0.encode=zstd gzip
+      - caddy_0.handle_path.0_reverse_proxy={{upstreams 3001}}
+      - caddy_0.handle_path=/*
+      - caddy_0.header=-Server
+      - caddy_0.try_files={path} /index.html /index.php
+      - caddy_0=https://api.sayitai.com
+      - caddy_ingress_network=coolify
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
       interval: 30s
