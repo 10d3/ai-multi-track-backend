@@ -203,53 +203,86 @@ class AudioProcessor {
   }
 
   async analyzeAudio(filePath: string) {
+    if (!filePath) {
+      throw new Error("File path is required");
+    }
+
     try {
-      // Get loudness information
+      // Get loudness information with more detailed metrics
       const loudnessInfo = await execAsync(
-        `ffmpeg -i "${filePath}" -af "loudnorm=print_format=json" -f null - 2>&1`
+        `ffmpeg -i "${filePath}" -af "loudnorm=print_format=json:linear=true:dual_mono=true" -f null - 2>&1`
       );
 
-      // Check for errors in the FFmpeg output
       if (loudnessInfo.stderr) {
         console.error("FFmpeg error:", loudnessInfo.stderr);
         throw new Error("Error getting loudness information");
       }
 
-      // Parse the loudness information from stdout
-      const loudnessData = JSON.parse(loudnessInfo.stdout);
+      let loudnessData;
+      try {
+        loudnessData = JSON.parse(loudnessInfo.stdout);
+      } catch (e:any) {
+        throw new Error("Failed to parse loudness data: " + e.message);
+      }
 
       // Get format information
       const formatInfo = await execAsync(
         `ffprobe -v quiet -print_format json -show_streams -show_format "${filePath}"`
       );
 
-      // Check for errors in the FFprobe output
       if (formatInfo.stderr) {
         console.error("FFprobe error:", formatInfo.stderr);
         throw new Error("Error getting format information");
       }
 
-      const audioInfo = JSON.parse(formatInfo.stdout);
-      const audioStream = audioInfo.streams.find(
+      let audioInfo;
+      try {
+        audioInfo = JSON.parse(formatInfo.stdout);
+      } catch (e:any) {
+        throw new Error("Failed to parse audio format data: " + e.message);
+      }
+
+      const audioStream = audioInfo.streams?.find(
         (s: any) => s.codec_type === "audio"
       );
 
-      return {
+      if (!audioStream) {
+        throw new Error("No audio stream found in file");
+      }
+
+      // Ensure all required values are present with fallbacks
+      const result = {
         loudness: {
           integrated: parseFloat(loudnessData.input_i || "0"),
           truePeak: parseFloat(loudnessData.input_tp || "0"),
           range: parseFloat(loudnessData.input_lra || "0"),
+          threshold: parseFloat(loudnessData.input_thresh || "-70"),
+          offset: parseFloat(loudnessData.target_offset || "0"),
         },
         format: {
-          sampleRate: parseInt(audioStream.sample_rate),
-          channels: parseInt(audioStream.channels),
-          codec: audioStream.codec_name,
+          sampleRate: parseInt(audioStream.sample_rate) || 44100,
+          channels: parseInt(audioStream.channels) || 2,
+          codec: audioStream.codec_name || "pcm_s16le",
         },
-        duration: parseFloat(audioInfo.format.duration),
+        duration: parseFloat(audioInfo.format?.duration || "0"),
       };
+
+      // Validate the parsed values
+      if (
+        isNaN(result.loudness.integrated) ||
+        isNaN(result.loudness.truePeak) ||
+        isNaN(result.loudness.range) ||
+        isNaN(result.format.sampleRate) ||
+        isNaN(result.format.channels) ||
+        isNaN(result.duration)
+      ) {
+        throw new Error("Invalid audio analysis values detected");
+      }
+
+      return result;
     } catch (error) {
       console.error("Error analyzing audio:", error);
-      throw error; // Rethrow the error after logging
+      throw error;
     }
   }
 
@@ -258,55 +291,93 @@ class AudioProcessor {
     backgroundTrack: string,
     transcript: Transcript[]
   ): Promise<string> {
-    try {
-      // Analyze the background track
-      const bgAnalysis = await this.analyzeAudio(backgroundTrack);
-      const { loudness, format } = bgAnalysis;
+    // Input validation
+    if (!Array.isArray(speechFiles) || speechFiles.length === 0) {
+      throw new Error("Speech files array is required and must not be empty");
+    }
+    if (!backgroundTrack) {
+      throw new Error("Background track is required");
+    }
+    if (
+      !Array.isArray(transcript) ||
+      transcript.length !== speechFiles.length
+    ) {
+      throw new Error("Transcript array must match speech files length");
+    }
 
-      // Verify files
+    try {
       await this.verifyFile(backgroundTrack);
       await Promise.all(speechFiles.map((file) => this.verifyFile(file)));
 
-      // Get background duration
-      const bgDuration = await this.getAudioDuration(backgroundTrack);
+      // Analyze background track
+      const bgAnalysis = await this.analyzeAudio(backgroundTrack);
 
-      // Process background track
+      // Analyze first speech file to use as reference
+      const speechAnalysis = await this.analyzeAudio(speechFiles[0]);
+
+      const bgDuration = bgAnalysis.duration;
+
+      if (bgDuration <= 0) {
+        throw new Error("Invalid background track duration");
+      }
+
+      // Process background track with normalized loudness
       const processedBgPath = await this.createTempPath("processed_bg", "wav");
       await execAsync(
-        `ffmpeg -i "${backgroundTrack}" -af "volume=0.3" -ar 44100 -y "${processedBgPath}"`
+        `ffmpeg -i "${backgroundTrack}" -af "loudnorm=I=${
+          speechAnalysis.loudness.integrated - 10
+        }:TP=${speechAnalysis.loudness.truePeak - 3}:LRA=${
+          speechAnalysis.loudness.range
+        }" -ar 44100 -y "${processedBgPath}"`
       );
 
-      // Process speech files
+      // Process speech files with consistent loudness
       const processedSpeechFiles = await Promise.all(
         speechFiles.map(async (file, index) => {
           const outputPath = await this.createTempPath(
             `processed_speech_${index}`,
             "wav"
           );
-          // Add slight volume boost to speech
           await execAsync(
-            `ffmpeg -i "${file}" -af "volume=2" -ar 44100 -y "${outputPath}"`
+            `ffmpeg -i "${file}" -af "loudnorm=I=${speechAnalysis.loudness.integrated}:TP=${speechAnalysis.loudness.truePeak}:LRA=${speechAnalysis.loudness.range}" -ar 44100 -y "${outputPath}"`
           );
           return outputPath;
         })
       );
 
+      // Validate transcript timing
+      const firstStart = transcript[0].start;
+      const lastEnd = transcript[transcript.length - 1].end as number;
+
+      if (
+        typeof firstStart !== "number" ||
+        typeof lastEnd !== "number" ||
+        firstStart >= lastEnd
+      ) {
+        throw new Error("Invalid transcript timing values");
+      }
+
+      const speechDuration = lastEnd - firstStart;
+      const scaleFactor = (bgDuration * 0.98) / speechDuration;
+
       let filterComplex = ``;
       let inputs = `-i "${processedBgPath}" `;
       let overlays = ``;
 
-      // Calculate timing adjustments
-      const firstStart = transcript[0].start;
-      const lastEnd = transcript[transcript.length - 1].end as number;
-      const speechDuration = lastEnd - firstStart;
-      const scaleFactor = (bgDuration * 0.98) / speechDuration;
-
       // Add input files and create precise delays
       for (let i = 0; i < transcript.length; i++) {
+        if (typeof transcript[i].start !== "number") {
+          throw new Error(`Invalid start time for transcript index ${i}`);
+        }
+
         inputs += `-i "${processedSpeechFiles[i]}" `;
 
         const relativeStart = transcript[i].start - firstStart;
         const scaledDelay = Math.round(relativeStart * scaleFactor * 1000);
+
+        if (scaledDelay < 0) {
+          throw new Error(`Invalid delay calculation at index ${i}`);
+        }
 
         filterComplex += `[${i + 1}:a]atrim=0,asetpts=PTS-STARTPTS[adj${i}];`;
         filterComplex += `[adj${i}]adelay=${scaledDelay}|${scaledDelay}[s${i}];`;
@@ -319,23 +390,26 @@ class AudioProcessor {
         overlays += `[s${i}]`;
       }
 
-      // Mix with higher overall volume
+      // Mix all streams while maintaining normalized levels
       filterComplex += `${overlays}amix=inputs=${
         transcript.length + 1
-      }:weights='0.5 ${Array(transcript.length).fill("2").join(" ")}'[mixed];`;
-
-      // Add final volume normalization based on the original background analysis
-      filterComplex += `[mixed]loudnorm=I=${loudness.integrated}:TP=${loudness.truePeak}:LRA=${loudness.range},volume=2[out]`;
+      }:normalize=0[out]`;
 
       const finalOutputPath = await this.createTempPath("final_output", "wav");
       const ffmpegCmd = `ffmpeg ${inputs} -filter_complex "${filterComplex}" -map "[out]" -c:a pcm_s16le -t ${bgDuration} -y "${finalOutputPath}"`;
 
       await execAsync(ffmpegCmd);
 
+      // Verify the output file exists and has content
+      const stats = await fs.stat(finalOutputPath);
+      if (stats.size === 0) {
+        throw new Error("Generated audio file is empty");
+      }
+
       return finalOutputPath;
     } catch (error) {
-      console.error("Error combining speech and background:", error);
-      throw error; // Rethrow after logging
+      console.error("Error combining audio:", error);
+      throw error;
     }
   }
 
