@@ -325,29 +325,22 @@ class AudioProcessor {
         throw new Error("Invalid background track duration");
       }
 
-      // Ensure LRA value is valid (between 1 and 20)
-      const validLRA = Math.max(1, Math.min(20, speechAnalysis.loudness.range));
-
-      // Process background track with original settings
+      // Process background track with minimal processing to preserve quality
       const processedBgPath = await this.createTempPath("processed_bg", "wav");
       await execAsync(
-        `ffmpeg -i "${backgroundTrack}" -af "loudnorm=I=${
-          speechAnalysis.loudness.integrated - 10
-        }:TP=${
-          speechAnalysis.loudness.truePeak - 3
-        }:LRA=${validLRA}" -ar 44100 -ac 2 -y "${processedBgPath}"`
+        `ffmpeg -i "${backgroundTrack}" -af "volume=1.0" -ar 44100 -ac 2 -y "${processedBgPath}"`
       );
 
-      // Process speech files with increased loudness
+      // Process speech files with minimal processing
       const processedSpeechFiles = await Promise.all(
         speechFiles.map(async (file, index) => {
           const outputPath = await this.createTempPath(
             `processed_speech_${index}`,
             "wav"
           );
-          // Add volume boost to speech files
+          // Simple volume adjustment for speech
           await execAsync(
-            `ffmpeg -i "${file}" -af "volume=2.5,loudnorm=I=${speechAnalysis.loudness.integrated}:TP=${speechAnalysis.loudness.truePeak}:LRA=${validLRA}" -ar 44100 -ac 2 -y "${outputPath}"`
+            `ffmpeg -i "${file}" -af "volume=1.5" -ar 44100 -ac 2 -y "${outputPath}"`
           );
           return outputPath;
         })
@@ -380,12 +373,18 @@ class AudioProcessor {
         overlays += `[s${i}]`;
       }
 
-      // Use amix with original weights
+      // Mix with slightly adjusted weights to balance speech and background
+      const bgWeight = 1.0;
+      const speechWeight = 1.2;
+      const weights = [bgWeight, ...Array(transcript.length).fill(speechWeight)].join(" ");
+
+      // Simple mixing without additional processing
       filterComplex += `${overlays}amix=inputs=${
         transcript.length + 1
-      }:weights=${Array(transcript.length + 1)
-        .fill(1)
-        .join(" ")}[out]`;
+      }:weights=${weights}[mixed];`;
+
+      // Gentle compression to even out volume without changing character
+      filterComplex += `[mixed]acompressor=threshold=-12dB:ratio=2:attack=200:release=1000[out]`;
 
       const finalOutputPath = await this.createTempPath("final_output", "wav");
       const ffmpegCmd = `ffmpeg ${inputs} -filter_complex "${filterComplex}" -map "[out]" -c:a pcm_s16le -t ${bgDuration} -y "${finalOutputPath}"`;
