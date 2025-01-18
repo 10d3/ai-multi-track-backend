@@ -41,8 +41,8 @@ router.get("/:jobId", async (req, res) => {
     }
 
     // Create a title from the first five words of the transcript
-    console.log("Transcript value:", transcript);
-    console.log("Transcript type:", typeof transcript);
+    // console.log("Transcript value:", transcript);
+    // console.log("Transcript type:", typeof transcript);
     const title =
       typeof transcript === "string"
         ? transcript.split(" ").slice(0, 5).join(" ")

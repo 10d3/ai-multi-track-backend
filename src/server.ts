@@ -41,7 +41,7 @@ app.get('/health', (req, res) => {
 });
 
 app.use((req, res) => {
-  console.log("Header received:", req.headers);
+  // console.log("Header received:", req.headers);
   res.sendFile(path.join(__dirname, "../public", "api-documentation.html"));
 });
 

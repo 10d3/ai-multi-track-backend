@@ -72,7 +72,7 @@ router.post("/", auth, async (req, res) => {
 
     // Call the Python script with arguments
     const spleeterCommand = `python3 ./src/script/separate_audio.py "${convertedOriginalAudioPath}" "${spleeterOutputDir}"`;
-    console.log("Spleeter Python Command:", spleeterCommand);
+    // console.log("Spleeter Python Command:", spleeterCommand);
 
     try {
       execSync(spleeterCommand);
@@ -83,7 +83,7 @@ router.post("/", auth, async (req, res) => {
 
     // Debugging: List the contents of the spleeter output directory
     const files = fs.readdirSync(spleeterOutputDir);
-    console.log("Files in Spleeter output directory:", files);
+    // console.log("Files in Spleeter output directory:", files);
 
     // Move the accompaniment file to a desired location
     const backgroundAudioPath = path.join(

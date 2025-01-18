@@ -16,6 +16,7 @@ import { downloadAudioFile } from "./utils";
 import dotenv from "dotenv";
 import axios from "axios";
 import type { JobData, Transcript } from "./types/type";
+import { notifyAPI } from "../services/notifyAPi";
 
 dotenv.config();
 
@@ -48,7 +49,7 @@ class AudioProcessor {
 
   async init(): Promise<void> {
     await fs.mkdir(TEMP_DIR, { recursive: true });
-    console.log("Temporary directory created/verified at:", TEMP_DIR);
+    // console.log("Temporary directory created/verified at:", TEMP_DIR);
   }
 
   async cleanup(): Promise<void> {
@@ -61,7 +62,7 @@ class AudioProcessor {
           .catch(() => false);
         if (exists) {
           await fs.unlink(file);
-          console.log("Cleaned up file:", file);
+          // console.log("Cleaned up file:", file);
         }
       } catch (error) {
         console.warn(`Failed to cleanup file ${file}:`, error);
@@ -76,7 +77,7 @@ class AudioProcessor {
           .catch(() => false);
         if (exists) {
           await fs.rm(dir, { recursive: true, force: true });
-          console.log("Cleaned up directory:", dir);
+          // console.log("Cleaned up directory:", dir);
         }
       } catch (error) {
         console.warn(`Failed to cleanup directory ${dir}:`, error);
@@ -91,7 +92,7 @@ class AudioProcessor {
     const filename = `${prefix}_${uuidv4()}${extension ? `.${extension}` : ""}`;
     const filePath = path.join(TEMP_DIR, filename);
     this.tempFilePaths.add(filePath);
-    console.log("Created temp path:", filePath);
+    // console.log("Created temp path:", filePath);
     return filePath;
   }
 
@@ -177,7 +178,7 @@ class AudioProcessor {
     this.tempDirs.add(spleeterOutputDir);
 
     try {
-      console.log("Running Spleeter on:", convertedOriginalPath);
+      // console.log("Running Spleeter on:", convertedOriginalPath);
       const scriptPath = path.resolve("./src/script/separate_audio.py");
       await execAsync(
         `python3 "${scriptPath}" "${convertedOriginalPath}" "${spleeterOutputDir}"`
@@ -431,7 +432,7 @@ class AudioProcessor {
         action: "read",
         expires: SIGNED_URL_EXPIRY,
       });
-      console.log("File uploaded successfully:", url);
+      // console.log("File uploaded successfully:", url);
       return url;
     } catch (error) {
       console.error("Upload failed:", error);
@@ -529,30 +530,9 @@ worker.on("progress", (job, progress) => {
 
 worker.on("completed", async (job) => {
   console.log(`Job ${job.id} completed successfully!`);
-  const email = job.data.email;
-  const transcript = job.data.transcript;
-  const language = job.data.language;
-  const title =
-    transcript.length > 0
-      ? transcript[0].text.split(" ").slice(0, 5).join(" ")
-      : "";
-
-  try {
-    const response = await axios.post(
-      "https://sayitai.com/api/finish-job-emailing", // or your live URL
-      {
-        isCompleded: true,
-        email,
-        jobId: job.id,
-        title,
-        language,
-      }
-    );
-    console.log("API notified successfully:", response.data);
-  } catch (error) {
-    console.error(`Error notifying API for job ${job.id}:`, error);
-  }
+  await notifyAPI(job);
 });
+
 
 worker.on("failed", (job, err) => {
   console.log(`Job ${job?.id} failed with error: ${err.message}`);

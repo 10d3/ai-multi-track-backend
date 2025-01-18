@@ -23,7 +23,7 @@ router.post('/', async (req, res) => {
       language
     });
 
-    console.log(job.id);
+    // console.log(job.id);
 
     res.status(200).json({ message: 'Job enqueued', jobId: job.id });
   } catch (error) {

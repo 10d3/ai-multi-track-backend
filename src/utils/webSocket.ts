@@ -37,7 +37,7 @@ wss.on("connection", (ws: ExtendedWebSocket) => {
         extWs.jobId = data.jobId;
         jobId = data.jobId
         connections.set(data.jobId, extWs);
-        console.log(`Client subscribed to job ${data.jobId}`);
+        // console.log(`Client subscribed to job ${data.jobId}`);
 
         // Send initial confirmation
         extWs.send(
@@ -55,7 +55,7 @@ wss.on("connection", (ws: ExtendedWebSocket) => {
   extWs.on("close", () => {
     if (extWs.jobId) {
       connections.delete(extWs.jobId);
-      console.log(`Client unsubscribed from job ${extWs.jobId}`);
+      // console.log(`Client unsubscribed from job ${extWs.jobId}`);
     }
   });
 
@@ -68,7 +68,7 @@ const interval = setInterval(() => {
   wss.clients.forEach((ws) => {
     const extWs = ws as ExtendedWebSocket;
     if (extWs.isAlive === false) {
-      console.log("Closing inactive WebSocket connection.");
+      // console.log("Closing inactive WebSocket connection.");
       extWs.close(1000, "Inactivity timeout");
     }
 
@@ -83,16 +83,16 @@ wss.on("error", (error) => {
 
 wss.on("close", () => {
   clearInterval(interval);
-  console.log("WebSocket server closed.");
+  // console.log("WebSocket server closed.");
 });
 
 async function sendJobUpdate(jobId: string) {
-  console.log(jobId);
+  // console.log(jobId);
   try {
     const job = await audioProcessingQueue.getJob(jobId);
 
-    console.log(`Sending update for job ${jobId}`);
-    console.log(job);
+    // console.log(`Sending update for job ${jobId}`);
+    // console.log(job);
 
     if (!job) {
       console.log(`No job found for id ${jobId}`);

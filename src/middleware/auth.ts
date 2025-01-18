@@ -15,7 +15,7 @@ const verifyToken = (
   const authHeader = req.headers["authorization"];
   const token = authHeader && authHeader.split(" ")[1]; // Supposer que le format est "Bearer <token>"
 
-  console.log("token", token);
+  // console.log("token", token);
 
   if (!token) {
     return res.status(403).send("A token is required for authentication");
