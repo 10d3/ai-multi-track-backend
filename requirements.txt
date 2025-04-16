@@ -38,7 +38,7 @@ protobuf==3.19.6
 pyasn1==0.6.1
 pyasn1_modules==0.4.1
 python-dateutil==2.9.0.post0
-pytubefix==8.1.1
+pytubefix==8.12.3
 pytz==2024.2
 requests==2.32.3
 requests-oauthlib==2.0.0
