@@ -5,7 +5,7 @@ from pytubefix.cli import on_progress
 url = sys.argv[1]
 output_filename = sys.argv[2]
 
-yt = YouTube(url, use_po_token = true)
+yt = YouTube(url, use_po_token = True)
 
 # Get audio stream
 audio_stream = yt.streams.filter(only_audio=True).first()
