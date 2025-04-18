@@ -1,3 +1,28 @@
+// // This is your Prisma schema file,
+// // learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// // Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+// generator client {
+//   provider = "prisma-client-js"
+//   // binaryTargets = ["native", "debian-openssl-1.1.x"]
+// }
+
+// datasource db {
+//   provider = "postgresql"
+//   url      = env("DATABASE_URL")
+// }
+
+
+// model User {
+//   id    Int     @id @default(autoincrement())
+//   email String  @unique
+//   name  String
+//   password String
+//   token String?
+// }
+
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
@@ -6,7 +31,7 @@
 
 generator client {
   provider = "prisma-client-js"
-  // binaryTargets = ["native", "debian-openssl-1.1.x"]
+  engineType = "binary"
 }
 
 datasource db {
@@ -14,11 +39,179 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model Plan {
+  id                 String         @id @default(cuid())
+  productId          String
+  productPriceId     String         @unique
+  // variantId          String         @unique
+  name               String?
+  description        String[]
+  price              Int
+  interval           String?
+  intervalCount      Int?
+  trialInterval      String?
+  trialIntervalCount Int?
+  subscriptions      Subscription[]
+  minutesLimit       Int            @default(0)
+  accumulationPeriod Int            @default(0)
+  minutes            Float          @default(0)
+}
+
+model Subscription {
+  id                      String    @id @default(cuid())
+  StripeCustomerId        String?   @unique @map(name: "stripe_customer_id")
+  StripeSubcriptionId     String?   @unique @map(name: "stripe_subcription_id")
+  StripePriceId           String?
+  StripeCurrentPeriodEnd  DateTime? @unique @map(name: "stripe_Current_period_end")
+  StripeCancelAtPeriodEnd Boolean?
+  userId                  String    @unique
+  productPriceId          String
+  availableMinutes        Float     @default(0) // Track remaining minutes
+  usedMinutes             Float     @default(0) // Track used minutes
+  lastMinutesReset        DateTime  @default(now()) // Track when minutes were last reset
+  accumulationPeriodUsed  Int       @default(0)
+  user                    User      @relation(fields: [userId], references: [id])
+  plan                    Plan      @relation(fields: [productPriceId], references: [productPriceId])
+}
+
+model AudioProcess {
+  id              String        @id @default(cuid())
+  status          String?       @default("progress")
+  finalAudio      String?
+  transcreationId String        @unique // Add @unique to enforce a one-to-one relationship
+  transcreation   Transcreation @relation(fields: [transcreationId], references: [id], onDelete: Cascade)
+}
+
+model Transcreation {
+  id               String        @id @default(cuid())
+  title            String?
+  jobId            String?       @unique
+  fromLanguage     String?
+  toLanguage       String?
+  originalAudioURL String?
+  subtitleFile     String?
+  choice           String        @default("ai")
+  audioDuration    Float
+  date             DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  userId           String // Keep unique to ensure one user per transcreation
+  user             User          @relation(fields: [userId], references: [id])
+  transcript       Transcript[] // Allow multiple transcripts
+  audioProcess     AudioProcess? // Set optional, enforcing one-to-one relationship
+}
+
+model Transcript {
+  id                 String              @id @default(cuid())
+  speaker            String
+  text               String
+  textTranslated     String?
+  textTranslatedSSML String?
+  voice              String?
+  sentiment          String
+  start              Int
+  end                Int
+  confidence         Int
+  transcreationId    String // Remove @unique to allow multiple transcripts
+  transcreation      Transcreation       @relation(fields: [transcreationId], references: [id], onDelete: Cascade)
+  metadataTranscript MetadataTranscript? // One-to-one relation
+}
+
+model MetadataTranscript {
+  id                     String                  @id @default(cuid())
+  contentType            String[]
+  formalityLevel         String
+  culturalContext        String
+  recommendedPace        String
+  speakerCharacteristics SpeakerCharacteristics?
+  transcriptId           String                  @unique // Ensure one metadata per transcript
+  transcript             Transcript              @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+}
+
+model SpeakerCharacteristics {
+  id                 String             @id @default(cuid())
+  age                String?
+  gender             String?
+  accent             String?
+  metadaTranscriptId String             @unique
+  metadataTranscript MetadataTranscript @relation(fields: [metadaTranscriptId], references: [id], onDelete: Cascade)
+}
 
 model User {
-  id    Int     @id @default(autoincrement())
-  email String  @unique
-  name  String
-  password String
-  token String?
+  id            String          @id @default(cuid())
+  name          String?
+  email         String?         @unique
+  emailVerified DateTime?       @map("email_verified")
+  image         String?
+  role          Role            @default(User)
+  accounts      Account[]
+  sessions      Session[]
+  subscriptions Subscription[]
+  threads       Thread[]
+  transcreation Transcreation[]
+
+  @@map("users")
+}
+
+model Thread {
+  id      String  @id @default(cuid())
+  title   String
+  content String
+  user    User?   @relation(fields: [userId], references: [id])
+  userId  String? @unique
+}
+
+model addBundle {
+  id          String    @id @default(cuid())
+  name        String
+  description String?   @db.Text
+  minutes     Int
+  price       Float
+  unit        Int?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  expireAt    DateTime?
+}
+
+enum Role {
+  User
+  Admin
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verificationtokens")
 }

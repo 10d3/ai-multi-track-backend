@@ -177,4 +177,4 @@ const storageGoogle = new Storage({ credentials });
 // });
 
 // Export key services
-export { audioProcessingQueue, storageGoogle };
+export { audioProcessingQueue, storageGoogle, credentials };

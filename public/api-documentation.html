@@ -38,6 +38,8 @@
                     <li>/api/isolate-speakers</li>
                     <li>/api/combine-audio</li>
                     <li>/api/ytdl</li>
+                    <li>/api/transcreation</li>
+                    <li>/api/job-status</li>
                 </ul>
             </section>
 
@@ -81,6 +83,18 @@
                             <li><span class="font-semibold">url:</span> string</li>
                         </ul>
                     </div>
+                    <div>
+                        <h3 class="text-xl font-medium text-indigo-300 mb-2">/api/transcreation/:id/process</h3>
+                        <ul class="list-disc list-inside space-y-1 text-gray-300">
+                            <li><span class="font-semibold">id:</span> string (transcreation ID)</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-medium text-indigo-300 mb-2">/api/job-status/:jobId</h3>
+                        <ul class="list-disc list-inside space-y-1 text-gray-300">
+                            <li><span class="font-semibold">jobId:</span> string</li>
+                        </ul>
+                    </div>
                 </div>
             </section>
             <section class="content-section rounded-lg p-6">
@@ -115,6 +129,22 @@
                         <h3 class="text-xl font-medium text-indigo-300 mb-2">/api/ytdl</h3>
                         <ul class="list-disc list-inside space-y-1 text-gray-300">
                             <li><span class="font-semibold">url:</span> string</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-medium text-indigo-300 mb-2">/api/transcreation/:id/process</h3>
+                        <ul class="list-disc list-inside space-y-1 text-gray-300">
+                            <li><span class="font-semibold">message:</span> string</li>
+                            <li><span class="font-semibold">jobId:</span> string</li>
+                            <li><span class="font-semibold">statusUrl:</span> string</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-medium text-indigo-300 mb-2">/api/job-status/:jobId</h3>
+                        <ul class="list-disc list-inside space-y-1 text-gray-300">
+                            <li><span class="font-semibold">state:</span> string</li>
+                            <li><span class="font-semibold">progress:</span> number</li>
+                            <li><span class="font-semibold">result:</span> string (when completed)</li>
                         </ul>
                     </div>
                 </div>

@@ -6,12 +6,13 @@ import { ytRoutes } from "./routes/yt-routes";
 import { isolateSpeakersRoutes } from "./routes/isolate-speakers-routes";
 import { audioRoutes } from "./routes/audio-routes";
 import { combineAudioRoutes } from "./routes/combine-audio-routes";
-import { signUpRoutes } from "./routes/sign-up-routes";
-import { loginRoutes } from "./routes/login-routes";
+// import { signUpRoutes } from "./routes/sign-up-routes";
+// import { loginRoutes } from "./routes/login-routes";
 import { refreshTokenRoutes } from "./routes/refresh-token";
 import { convertToAudioRoutes } from "./routes/convert-to-audio-routes";
 import { jobStatusRoutes } from "./routes/job-status-route";
 import { combineAudioBullRoutes } from "./routes/test-bullmq-routes";
+// import { transcreationRoutes } from "./routes/transcreation-routes";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -30,14 +31,15 @@ app.use("/api/yt", ytRoutes);
 app.use("/api/isolate-speakers", isolateSpeakersRoutes);
 app.use("/api/audio", audioRoutes);
 app.use("/api/combine-audio", combineAudioRoutes);
-app.use("/api/sign-up", signUpRoutes);
-app.use("/api/login", loginRoutes);
+// app.use("/api/sign-up", signUpRoutes);
+// app.use("/api/login", loginRoutes);
 app.use("/api/refresh-token", refreshTokenRoutes);
 app.use("/api/convert-to-audio", convertToAudioRoutes);
 app.use("/api/job-status", jobStatusRoutes);
 app.use("/api/test-bull", combineAudioBullRoutes);
-app.get('/health', (req, res) => {
-  res.status(200).send('OK');
+// app.use("/api/transcreation", transcreationRoutes);
+app.get("/health", (req, res) => {
+  res.status(200).send("OK");
 });
 
 app.use((req, res) => {

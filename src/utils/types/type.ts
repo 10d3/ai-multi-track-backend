@@ -4,10 +4,23 @@ export interface Transcript {
   text: string;
 }
 
+// export interface JobData {
+//   audioUrls: string[];
+//   transcript: Transcript[];
+//   originalAudioUrl: string;
+//   email: string;
+//   language: string;
+// }
+
 export interface JobData {
-  audioUrls: string[];
-  transcript: Transcript[];
+  userEmail: string;
+  audioUrls?: string[];
+  ttsRequests?: Array<{
+    textToSpeech: string;
+    voice_id: string;
+    output_format?: string;
+    voice_name: string;
+  }>;
   originalAudioUrl: string;
-  email: string;
-  language: string;
+  transcript: Transcript[];
 }
