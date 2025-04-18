@@ -30,7 +30,7 @@ RUN bun --bunx prisma generate
 RUN python3 -m pip install --upgrade pip
 
 # Installer les dépendances Python dans l'environnement virtuel
-RUN pip3 install spleeter==2.4.0
+# RUN pip3 install spleeter==2.4.0
 RUN pip3 install -r requirements.txt
 
 # Exposer le port pour l'application
