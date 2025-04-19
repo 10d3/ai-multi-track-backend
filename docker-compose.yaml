@@ -7,6 +7,8 @@ services:
       dockerfile: Dockerfile
     container_name: n4sgg0gkw0g040cog4os4ck8-153713984346
     restart: unless-stopped
+    depends_on:
+      - redis
     labels:
       - traefik.enable=true
       - traefik.http.middlewares.gzip.compress=true
@@ -39,6 +41,20 @@ services:
     networks:
       - coolify
 
+  # Redis service
+  redis:
+    image: redis:alpine
+    container_name: sayitai-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    volumes:
+      - redis-data:/data
+    networks:
+      - coolify
+
 networks:
   coolify:
     external: true
+
+volumes:
+  redis-data
