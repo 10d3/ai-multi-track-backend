@@ -57,4 +57,4 @@ networks:
     external: true
 
 volumes:
-  redis-data
+  redis-data:
