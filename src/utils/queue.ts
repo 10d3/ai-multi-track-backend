@@ -17,11 +17,11 @@ dotenv.config();
 //   }
 // });
 function cleanPrivateKey(key: string | undefined) {
-  if (!key) return '';
+  if (!key) return "";
   return key
-    .replace(/\\n/g, '\n')  // Replace literal \n with newlines
-    .replace(/["']/g, '')   // Remove any quotes
-    .replace(/\\/g, '');    // Remove any remaining backslashes
+    .replace(/\\n/g, "\n") // Replace literal \n with newlines
+    .replace(/["']/g, "") // Remove any quotes
+    .replace(/\\/g, ""); // Remove any remaining backslashes
 }
 
 const privateKey = cleanPrivateKey(process.env.GOOGLE_PRIVATE_KEY);
@@ -42,10 +42,10 @@ const credentials = {
 };
 
 // Comprehensive Redis Configuration
-export const redisHost = process.env.REDIS_HOST;
-export const redisPort = 6379;
-export const redisUserName = "default";
-export const redisPassword = process.env.REDIS_PASSWORD
+export const redisHost = process.env.REDIS_HOST || "localhost";
+export const redisPort = parseInt(process.env.REDIS_PORT || "6379");
+export const redisUserName = process.env.REDIS_USERNAME || "";
+export const redisPassword = process.env.REDIS_PASSWORD || "";
 
 // const redisConfig = {
 //   host: redisHost,
@@ -116,8 +116,8 @@ const audioProcessingQueue = new Queue("audio-processing", {
   connection: {
     host: redisHost,
     port: redisPort,
-    username:redisUserName,
-    password:redisPassword,
+    ...(redisUserName ? { username: redisUserName } : {}),
+    ...(redisPassword ? { password: redisPassword } : {}),
     maxRetriesPerRequest: null,
     connectTimeout: 5000,
   },
@@ -135,8 +135,8 @@ export const eventAudioProcessing = new QueueEvents("audio-processing", {
   connection: {
     host: redisHost,
     port: redisPort,
-    username:redisUserName,
-    password:redisPassword
+    ...(redisUserName ? { username: redisUserName } : {}),
+    ...(redisPassword ? { password: redisPassword } : {}),
   },
 });
 
