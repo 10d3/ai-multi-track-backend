@@ -647,8 +647,8 @@ const worker = new Worker<JobData>(
     connection: {
       host: redisHost,
       port: redisPort,
-      username: redisUserName,
-      password: redisPassword,
+      ...(redisUserName ? { username: redisUserName } : {}),
+      ...(redisPassword ? { password: redisPassword } : {}),
       maxRetriesPerRequest: null,
       connectTimeout: 5000,
     },
