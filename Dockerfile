@@ -4,34 +4,30 @@ FROM oven/bun:latest
 # Définir le répertoire de travail
 WORKDIR /app
 
+# Copy package files first for better layer caching
 COPY package*.json ./
-# Installer Python et les dépendances nécessaires
-RUN apt-get update && apt-get install -y \
-    python3.9 \
-    python3.9-venv \
-    python3.9-dev \
-    python3-pip \
-    ffmpeg \
-    curl
 
-# Créer et activer un environnement virtuel
-ENV VIRTUAL_ENV=/opt/venv
-RUN python3.9 -m venv $VIRTUAL_ENV
-ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+# Install Node.js dependencies with bun
+RUN bun install
 
-# Copier les fichiers du projet
+# Copy requirements.txt for Python dependencies
+COPY requirements.txt .
+
+# Install Python, pip, ffmpeg and other dependencies
+RUN apt-get update && \
+    apt-get install -y python3.9 python3.9-pip ffmpeg curl && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+RUN pip3 install --no-cache-dir spleeter && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy the rest of the application
 COPY . /app/
 
-# Installer les dépendances Node.js avec bun
-RUN bun install
+# Generate Prisma client
 RUN bun --bunx prisma generate
-
-# Mettre à jour pip dans l'environnement virtuel
-RUN python3.9 -m pip install --upgrade pip
-
-# Installer les dépendances Python dans l'environnement virtuel
-# RUN pip3 install spleeter==2.4.0
-RUN pip3 install -r requirements.txt
 
 # Exposer le port pour l'application
 EXPOSE 8090
