@@ -75,10 +75,32 @@ async function sendJobUpdate(jobId: string) {
     let result = null;
     let error = null;
 
+    // Enhanced processing stage information
+    let processingStage = "Initializing";
+    if (progress > 0 && progress <= 20) {
+      processingStage = "Generating speech from text";
+    } else if (progress > 20 && progress <= 50) {
+      processingStage = "Separating background music";
+    } else if (progress > 50 && progress <= 80) {
+      processingStage = "Combining speech with background";
+    } else if (progress > 80 && progress < 100) {
+      processingStage = "Finalizing and uploading";
+    } else if (progress === 100) {
+      processingStage = "Complete";
+    }
+
+    // Estimated time calculation based on progress
+    const estimatedTimeRemaining =
+      progress > 0 && progress < 100
+        ? Math.round((100 - progress) * 1.5) // rough estimate: 1.5 seconds per percentage point
+        : 0;
+
     if (state === "completed") {
       result = job.returnvalue;
+      processingStage = "Complete";
     } else if (state === "failed") {
       error = job.failedReason;
+      processingStage = "Failed";
     }
 
     const title =
@@ -88,17 +110,22 @@ async function sendJobUpdate(jobId: string) {
 
     const res = connections.get(jobId);
     if (res) {
-      // Send the update as an SSE event
+      // Send the update as an SSE event with enhanced information
       res.write(
         `data: ${JSON.stringify({
           jobId,
           state,
           progress,
+          processingStage,
+          estimatedTimeRemaining,
           remainingTime,
           result,
           error,
           jobData,
           title,
+          // Add timestamps for frontend to calculate elapsed time
+          timestamp: Date.now(),
+          startedAt: job.timestamp,
         })}\n\n`
       );
 

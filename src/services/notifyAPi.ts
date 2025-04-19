@@ -4,13 +4,16 @@ export async function notifyAPI(job:any) {
   const MAX_RETRIES = 3;
   let retries = 0;
 
+   // Get email from either field
+   const email = job.data.email || job.data.userEmail;
+
   while (retries < MAX_RETRIES) {
     try {
       const response = await axios.post(
         "https://sayitai.com/api/finish-job-emailing",
         {
           isCompleded: true,
-          email: job.data.email,
+          email: email,
           jobId: job.id,
           title:
             job.data.transcript.length > 0

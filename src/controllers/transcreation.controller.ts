@@ -150,6 +150,8 @@ export const formatTranscreationForWorker = async (
     transcript,
     ttsRequests,
     userEmail: transcreation.user.email as string,
+    email: transcreation.user.email as string, // Add this for compatibility with notifyAPI
+    language: transcreation.toLanguage || "en-US", // Add language information
   };
 
   return jobData;

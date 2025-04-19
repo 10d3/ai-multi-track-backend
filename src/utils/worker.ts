@@ -583,12 +583,48 @@ const worker = new Worker<JobData>(
             estimatedRemainingTime / 1000
           )} seconds`
         );
+        
+        // Add detailed step information to job data
+        job.updateData({
+          ...job.data,
+          processingDetails: {
+            currentStep: completedSteps,
+            totalSteps,
+            elapsedTime,
+            estimatedRemainingTime,
+            stepTimes,
+            lastStepName: getCurrentStepName(completedSteps)
+          }
+        });
+      };
+      
+      // Helper function to get descriptive step names
+      const getCurrentStepName = (step: number) => {
+        if (job.data.ttsRequests && job.data.ttsRequests.length > 0) {
+          if (step === 0) return "Generating speech from text";
+          if (step === 1) return "Separating background music";
+          if (step === 2) return "Combining speech with background";
+          if (step === 3) return "Finalizing and uploading";
+        } else {
+          if (step === 0) return "Processing audio files";
+          if (step === 1) return "Separating background music";
+          if (step === 2) return "Combining speech with background";
+          if (step === 3) return "Finalizing and uploading";
+        }
+        return "Processing";
       };
 
       // Check if we have audio URLs or TTS requests
       if (job.data.ttsRequests && job.data.ttsRequests.length > 0) {
         // Process TTS requests
         await job.updateProgress(5); // Starting progress
+        
+        // Update with more detailed information
+        await job.updateData({
+          ...job.data,
+          currentOperation: "Generating speech from text",
+          startTime,
+        });
 
         ttsConvertedPaths = await audioProcessor.processMultipleTTS(
           job.data.ttsRequests
@@ -602,6 +638,12 @@ const worker = new Worker<JobData>(
         recordStepTime();
       } else if (job.data.audioUrls && job.data.audioUrls.length > 0) {
         // Process existing audio URLs
+        await job.updateData({
+          ...job.data,
+          currentOperation: "Processing audio files",
+          startTime,
+        });
+        
         ttsConvertedPaths = await audioProcessor.processTTSFiles(
           job.data.audioUrls
         );
@@ -616,6 +658,11 @@ const worker = new Worker<JobData>(
         throw new Error("No audio URLs or TTS requests provided");
       }
 
+      await job.updateData({
+        ...job.data,
+        currentOperation: "Separating background music",
+      });
+      
       const separatedPath = await audioProcessor.separateOriginalAudio(
         job.data.originalAudioUrl
       );
@@ -623,6 +670,11 @@ const worker = new Worker<JobData>(
       await job.updateProgress(Math.round((completedSteps / totalSteps) * 100));
       recordStepTime();
 
+      await job.updateData({
+        ...job.data,
+        currentOperation: "Combining speech with background",
+      });
+      
       const finalOutputPath =
         await audioProcessor.combineAllSpeechWithBackground(
           ttsConvertedPaths,
@@ -633,6 +685,11 @@ const worker = new Worker<JobData>(
       await job.updateProgress(Math.round((completedSteps / totalSteps) * 100));
       recordStepTime();
 
+      await job.updateData({
+        ...job.data,
+        currentOperation: "Finalizing and uploading",
+      });
+      
       const finalUrl = await audioProcessor.uploadToStorage(finalOutputPath);
       console.log("Audio processing completed successfully", finalUrl);
       return finalUrl;

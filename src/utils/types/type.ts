@@ -13,14 +13,26 @@ export interface Transcript {
 // }
 
 export interface JobData {
-  userEmail: string;
-  audioUrls?: string[];
+  originalAudioUrl: string;
   ttsRequests?: Array<{
     textToSpeech: string;
     voice_id: string;
     output_format?: string;
     voice_name: string;
   }>;
-  originalAudioUrl: string;
+  audioUrls?: string[];
   transcript: Transcript[];
+  userEmail?: string;  // From transcreation controller
+  email?: string;      // For backward compatibility
+  language?: string;   // Language information
+  currentOperation?: string;
+  startTime?: number;
+  processingDetails?: {
+    currentStep: number;
+    totalSteps: number;
+    elapsedTime: number;
+    estimatedRemainingTime: number;
+    stepTimes: number[];
+    lastStepName: string;
+  };
 }
