@@ -7,23 +7,24 @@ WORKDIR /app
 # Copy package files first for better layer caching
 COPY package*.json ./
 
-# Install Node.js dependencies with bun
+# Installer les dépendances Node.js avec bun
+RUN bun add @prisma/client prisma
 RUN bun install
 
 # Copy requirements.txt for Python dependencies
 COPY requirements.txt .
 
-# Install Python, pip, ffmpeg and other dependencies
+# Installer Python et pip avec la version disponible
 RUN apt-get update && \
-    apt-get install -y python3.9 python3.9-pip ffmpeg curl && \
+    apt-get install -y python3 python3-pip ffmpeg curl && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Installer les dépendances Python
 RUN pip3 install --no-cache-dir spleeter && \
-    pip install --no-cache-dir -r requirements.txt
+    pip3 install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application
+# Copier les fichiers du projet
 COPY . /app/
 
 # Generate Prisma client
