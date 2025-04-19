@@ -14,14 +14,19 @@ RUN bun install
 # Copy requirements.txt for Python dependencies
 COPY requirements.txt .
 
-# Installer Python et pip avec la version disponible
+# Installer Python, pip, et les outils nécessaires
 RUN apt-get update && \
-    apt-get install -y python3 python3-pip ffmpeg curl && \
+    apt-get install -y python3 python3-pip python3-venv ffmpeg curl && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Installer les dépendances Python
-RUN pip3 install --no-cache-dir spleeter && \
+# Créer et activer un environnement virtuel Python
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Installer les dépendances Python dans l'environnement virtuel
+RUN pip3 install --upgrade pip && \
+    pip3 install --no-cache-dir spleeter && \
     pip3 install --no-cache-dir -r requirements.txt
 
 # Copier les fichiers du projet
