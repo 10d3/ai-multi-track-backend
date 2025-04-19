@@ -42,11 +42,12 @@ services:
       - coolify
 
   # Redis service
+    # Redis service
   redis:
     image: redis:alpine
     container_name: sayitai-redis
     restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    command: redis-server --requirepass "zr0ack6CP4RRUwAUOidnmn0qMnYeo6SiZ7lkFjlChC3JEsbQp6EeUaOYXQApd6zx" --appendonly yes
     volumes:
       - redis-data:/data
     networks:
