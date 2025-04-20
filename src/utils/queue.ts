@@ -41,15 +41,25 @@ const credentials = {
   universe_domain: process.env.GOOGLE_UNIVERSE_DOMAIN,
 };
 
-// Redis Configuration
+// Comprehensive Redis Configuration
 export const redisHost = process.env.REDIS_HOST || "localhost";
 export const redisPort = parseInt(process.env.REDIS_PORT || "6379");
+export const redisUserName = process.env.REDIS_USERNAME || "default";
+export const redisPassword = process.env.REDIS_PASSWORD || "test123";  // Match the password
 
-// Create Queue with Simple Configuration
+console.log("Redis Configuration:", {
+  host: redisHost,
+  port: redisPort,
+  username: redisUserName,
+  password: redisPassword,
+});
+// Create Queue with Enhanced Configuration
 const audioProcessingQueue = new Queue("audio-processing", {
   connection: {
     host: redisHost,
     port: redisPort,
+    username: redisUserName,
+    password: redisPassword,
     maxRetriesPerRequest: null,
     connectTimeout: 5000,
   },
@@ -62,11 +72,13 @@ const audioProcessingQueue = new Queue("audio-processing", {
   },
 });
 
-// Queue Events with Simple Configuration
+// Queue Events with Enhanced Logging
 export const eventAudioProcessing = new QueueEvents("audio-processing", {
   connection: {
     host: redisHost,
     port: redisPort,
+    username: redisUserName,
+    password: redisPassword,
     maxRetriesPerRequest: null,
   },
 });

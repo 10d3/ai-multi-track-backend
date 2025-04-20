@@ -7,9 +7,9 @@ import { exec } from "child_process";
 import {
   credentials,
   redisHost,
-  // redisPassword,
+  redisPassword,
   redisPort,
-  // redisUserName,
+  redisUserName,
   storageGoogle,
 } from "./queue";
 import { v4 as uuidv4 } from "uuid";
@@ -704,8 +704,8 @@ const worker = new Worker<JobData>(
     connection: {
       host: redisHost,
       port: redisPort,
-      // username: redisUserName,
-      // password: redisPassword,
+      username: redisUserName,
+      password: redisPassword,
       maxRetriesPerRequest: null,
       connectTimeout: 5000,
       retryStrategy(times: number) {

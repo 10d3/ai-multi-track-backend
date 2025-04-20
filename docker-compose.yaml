@@ -8,10 +8,10 @@ services:
     container_name: n4sgg0gkw0g040cog4os4ck8-153713984346
     restart: unless-stopped
     environment:
-      - REDIS_HOST=redis
+      - REDIS_HOST=xk8g0k4kcks4ckco0g008osk
       - REDIS_PORT=6379
-    depends_on:
-      - redis
+      - REDIS_USERNAME=default
+      - REDIS_PASSWORD=zr0ack6CP4RRUwAUOidnmn0qMnYeo6SiZ7lkFjlChC3JEsbQp6EeUaOYXQApd6zx
     labels:
       - traefik.enable=true
       - traefik.http.middlewares.gzip.compress=true
@@ -44,21 +44,8 @@ services:
     networks:
       - coolify
 
-  # Redis service
-    # Redis service
-    # Redis service
-  redis:
-    image: redis:alpine
-    container_name: sayitai-redis
-    restart: unless-stopped
-    volumes:
-      - redis-data:/data
-    networks:
-      - coolify
 
 networks:
   coolify:
     external: true
 
-volumes:
-  redis-data:
