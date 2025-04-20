@@ -10,8 +10,8 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD=
-      - REDIS_USERNAME=
+      - REDIS_PASSWORD=test123
+      - REDIS_USERNAME=default
     depends_on:
       - redis
     labels:
@@ -53,8 +53,9 @@ services:
     image: redis:alpine
     container_name: sayitai-redis
     restart: unless-stopped
-    # Simplified Redis configuration without authentication
-    command: redis-server --appendonly yes
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
     volumes:
       - redis-data:/data
     networks:

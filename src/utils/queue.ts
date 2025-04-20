@@ -47,13 +47,19 @@ export const redisPort = parseInt(process.env.REDIS_PORT || "6379");
 export const redisUserName = process.env.REDIS_USERNAME;
 export const redisPassword = process.env.REDIS_PASSWORD;
 
+console.log("Redis Configuration:", {
+  host: redisHost,
+  port: redisPort,
+  username: redisUserName,
+  password: redisPassword,
+});
 // Create Queue with Enhanced Configuration
 const audioProcessingQueue = new Queue("audio-processing", {
   connection: {
     host: redisHost,
     port: redisPort,
-    // ...(redisUserName ? { username: redisUserName } : {}),
-    // ...(redisPassword ? { password: redisPassword } : {}),
+    username: redisUserName,
+    password: redisPassword,
     maxRetriesPerRequest: null,
     connectTimeout: 5000,
   },
@@ -71,10 +77,9 @@ export const eventAudioProcessing = new QueueEvents("audio-processing", {
   connection: {
     host: redisHost,
     port: redisPort,
-    // ...(redisUserName ? { username: redisUserName } : {}),
-    // ...(redisPassword ? { password: redisPassword } : {}),
-    // username: null,
-    // password: null
+    username: redisUserName,
+    password: redisPassword,
+    maxRetriesPerRequest: null,
   },
 });
 

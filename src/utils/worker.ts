@@ -704,10 +704,14 @@ const worker = new Worker<JobData>(
     connection: {
       host: redisHost,
       port: redisPort,
-      // ...(redisUserName ? { username: redisUserName } : {}),
-      // ...(redisPassword ? { password: redisPassword } : {}),
+      username: redisUserName,
+      password: redisPassword,
       maxRetriesPerRequest: null,
       connectTimeout: 5000,
+      retryStrategy(times: number) {
+        const delay = Math.min(times * 50, 2000);
+        return delay;
+      }
     },
     concurrency: 5,
   }
