@@ -52,8 +52,8 @@ const audioProcessingQueue = new Queue("audio-processing", {
   connection: {
     host: redisHost,
     port: redisPort,
-    ...(redisUserName ? { username: redisUserName } : {}),
-    ...(redisPassword ? { password: redisPassword } : {}),
+    // ...(redisUserName ? { username: redisUserName } : {}),
+    // ...(redisPassword ? { password: redisPassword } : {}),
     maxRetriesPerRequest: null,
     connectTimeout: 5000,
   },
@@ -71,8 +71,10 @@ export const eventAudioProcessing = new QueueEvents("audio-processing", {
   connection: {
     host: redisHost,
     port: redisPort,
-    ...(redisUserName ? { username: redisUserName } : {}),
-    ...(redisPassword ? { password: redisPassword } : {}),
+    // ...(redisUserName ? { username: redisUserName } : {}),
+    // ...(redisPassword ? { password: redisPassword } : {}),
+    // username: null,
+    // password: null
   },
 });
 
