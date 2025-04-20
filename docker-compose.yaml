@@ -53,7 +53,7 @@ services:
     image: redis:alpine
     container_name: sayitai-redis
     restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD}
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
     environment:
       - REDIS_PASSWORD=${REDIS_PASSWORD}
     volumes:
