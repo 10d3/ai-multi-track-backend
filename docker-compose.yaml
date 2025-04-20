@@ -10,8 +10,6 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD=test123
-      - REDIS_USERNAME=default
     depends_on:
       - redis
     labels:
@@ -53,9 +51,6 @@ services:
     image: redis:alpine
     container_name: sayitai-redis
     restart: unless-stopped
-    command: ["redis-server", "--requirepass", "test123"]  # Match the password
-    environment:
-      - REDIS_PASSWORD=test123  # Match the password
     volumes:
       - redis-data:/data
     networks:
