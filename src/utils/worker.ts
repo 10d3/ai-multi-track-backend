@@ -56,6 +56,8 @@ class AudioProcessor {
 
   async cleanup(): Promise<void> {
     console.log("Starting cleanup...");
+    
+    // First clean up files
     const fileCleanup = Array.from(this.tempFilePaths).map(async (file) => {
       try {
         const exists = await fs
@@ -63,14 +65,19 @@ class AudioProcessor {
           .then(() => true)
           .catch(() => false);
         if (exists) {
-          await fs.unlink(file);
-          // console.log("Cleaned up file:", file);
+          const stats = await fs.stat(file);
+          if (stats.isDirectory()) {
+            await fs.rm(file, { recursive: true, force: true });
+          } else {
+            await fs.unlink(file);
+          }
         }
       } catch (error) {
-        console.warn(`Failed to cleanup file ${file}:`, error);
+        console.warn(`Failed to cleanup path ${file}:`, error);
       }
     });
 
+    // Then clean up directories
     const dirCleanup = Array.from(this.tempDirs).map(async (dir) => {
       try {
         const exists = await fs
@@ -79,7 +86,6 @@ class AudioProcessor {
           .catch(() => false);
         if (exists) {
           await fs.rm(dir, { recursive: true, force: true });
-          // console.log("Cleaned up directory:", dir);
         }
       } catch (error) {
         console.warn(`Failed to cleanup directory ${dir}:`, error);
@@ -87,6 +93,11 @@ class AudioProcessor {
     });
 
     await Promise.all([...fileCleanup, ...dirCleanup]);
+    
+    // Clear the sets
+    this.tempFilePaths.clear();
+    this.tempDirs.clear();
+    
     console.log("Cleanup completed");
   }
 
@@ -283,12 +294,13 @@ class AudioProcessor {
 
     const convertedOriginalPath = await this.convertAudioToWav(originalPath);
 
-    const spleeterOutputDir = await this.createTempPath("spleeter_output", "");
+    const spleeterOutputDir = await this.createTempPath("spleeter_output");
     await fs.mkdir(spleeterOutputDir, { recursive: true });
+    // Add to tempDirs instead of tempFilePaths
     this.tempDirs.add(spleeterOutputDir);
+    this.tempFilePaths.delete(spleeterOutputDir); // Remove from tempFilePaths if it was added
 
     try {
-      // console.log("Running Spleeter on:", convertedOriginalPath);
       const scriptPath = path.resolve("./src/script/separate_audio.py");
       await execAsync(
         `python3 "${scriptPath}" "${convertedOriginalPath}" "${spleeterOutputDir}"`

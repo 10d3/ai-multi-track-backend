@@ -25,6 +25,14 @@ const connections = new Map<string, express.Response>();
 // SSE endpoint for job updates
 app.get("/events/:jobId", (req, res) => {
   const jobId = req.params.jobId;
+  const clientIp = req.ip || req.socket.remoteAddress;
+  
+  console.log(`[SSE] New connection request received:`, {
+    jobId,
+    clientIp,
+    timestamp: new Date().toISOString(),
+    headers: req.headers
+  });
 
   // Set headers for SSE
   res.writeHead(200, {
@@ -34,15 +42,18 @@ app.get("/events/:jobId", (req, res) => {
   });
 
   // Send initial connection confirmation
-  res.write(
-    `data: ${JSON.stringify({
-      type: "subscription_confirmed",
-      jobId: jobId,
-    })}\n\n`
-  );
+  const confirmationMessage = {
+    type: "subscription_confirmed",
+    jobId: jobId,
+    timestamp: new Date().toISOString()
+  };
+  
+  res.write(`data: ${JSON.stringify(confirmationMessage)}\n\n`);
+  console.log(`[SSE] Connection confirmed for job ${jobId}`);
 
   // Store the connection
   connections.set(jobId, res);
+  console.log(`[SSE] Active connections count: ${connections.size}`);
 
   // Send initial job status
   sendJobUpdate(jobId);
@@ -50,20 +61,29 @@ app.get("/events/:jobId", (req, res) => {
   // Handle client disconnect
   req.on("close", () => {
     connections.delete(jobId);
-    console.log(`Client unsubscribed from job ${jobId}`);
+    console.log(`[SSE] Client disconnected from job ${jobId}. Active connections: ${connections.size}`);
+  });
+
+  // Handle client errors
+  req.on("error", (error) => {
+    console.error(`[SSE] Error on connection for job ${jobId}:`, error);
+    connections.delete(jobId);
   });
 });
 
 async function sendJobUpdate(jobId: string) {
+  console.log(`[SSE] Attempting to send update for job ${jobId}`);
+  
   try {
     const job = await audioProcessingQueue.getJob(jobId);
 
     if (!job) {
-      console.log(`No job found for id ${jobId}`);
+      console.log(`[SSE] No job found for id ${jobId}`);
       return;
     }
 
     const state = await job.getState();
+    console.log(`[SSE] Job ${jobId} state: ${state}`);
     const progress = job.progress || 0;
     const remainingTime =
       job.opts.delay && job.timestamp
@@ -110,7 +130,12 @@ async function sendJobUpdate(jobId: string) {
 
     const res = connections.get(jobId);
     if (res) {
-      // Send the update as an SSE event with enhanced information
+      console.log(`[SSE] Sending update to client for job ${jobId}:`, {
+        state,
+        progress,
+        processingStage
+      });
+
       res.write(
         `data: ${JSON.stringify({
           jobId,
@@ -123,42 +148,42 @@ async function sendJobUpdate(jobId: string) {
           error,
           jobData,
           title,
-          // Add timestamps for frontend to calculate elapsed time
           timestamp: Date.now(),
           startedAt: job.timestamp,
         })}\n\n`
       );
 
-      // If job is completed or failed, close the connection
       if (state === "completed" || state === "failed") {
+        console.log(`[SSE] Job ${jobId} ${state}. Scheduling connection closure.`);
         setTimeout(() => {
           if (connections.has(jobId)) {
+            console.log(`[SSE] Closing connection for completed/failed job ${jobId}`);
             connections.delete(jobId);
             res.end();
           }
-        }, 1000); // Give client time to process the final update
+        }, 1000);
       }
     } else {
-      console.log(`No open connection found for job ${jobId}`);
+      console.log(`[SSE] No open connection found for job ${jobId}`);
     }
   } catch (error) {
-    console.error("Error sending job update:", error);
+    console.error(`[SSE] Error sending job update for ${jobId}:`, error);
   }
 }
 
-// Listen for job events
+// Add logging for event listeners
 eventAudioProcessing.on("completed", (jobId) => {
-  console.log(`Job completed event received for job ID: ${jobId.jobId}`);
+  console.log(`[SSE Event] Job completed event received for job ID: ${jobId.jobId}`);
   sendJobUpdate(jobId.jobId);
 });
 
 eventAudioProcessing.on("failed", (jobId) => {
-  console.log(`Job failed event received for job ID: ${jobId.jobId}`);
+  console.log(`[SSE Event] Job failed event received for job ID: ${jobId.jobId}`);
   sendJobUpdate(jobId.jobId);
 });
 
 eventAudioProcessing.on("progress", (jobId) => {
-  console.log(`Job progress event received for job ID: ${jobId.jobId}`);
+  console.log(`[SSE Event] Job progress event received for job ID: ${jobId.jobId}`);
   sendJobUpdate(jobId.jobId);
 });
 
