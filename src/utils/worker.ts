@@ -30,16 +30,55 @@ const BATCH_SIZE = 5;
 const TEMP_DIR = path.resolve(process.cwd(), "temp");
 const BUCKET_NAME = process.env.BUCKET_NAME as string;
 const SIGNED_URL_EXPIRY = "03-09-2491";
+const TTS_TIMEOUT_MS = 60000; // 60 seconds timeout for TTS requests
 
 // Define interfaces for job data
 
 class AudioProcessor {
   private tempFilePaths: Set<string>;
   private tempDirs: Set<string>;
+  private ttsClient: any = null;
+  private ttsClientInitPromise: Promise<any> | null = null;
 
   constructor() {
     this.tempFilePaths = new Set();
     this.tempDirs = new Set();
+  }
+
+  // Method to get or initialize the TTS client
+  async getTTSClient(): Promise<any> {
+    // If client already exists, return it
+    if (this.ttsClient) {
+      console.log("Using existing TTS client");
+      return this.ttsClient;
+    }
+
+    // If initialization is in progress, wait for it
+    if (this.ttsClientInitPromise) {
+      console.log("Waiting for TTS client initialization to complete");
+      return this.ttsClientInitPromise;
+    }
+
+    // Initialize the client
+    console.log("Initializing new TTS client");
+    this.ttsClientInitPromise = (async () => {
+      try {
+        const { TextToSpeechClient } = await import("@google-cloud/text-to-speech");
+        this.ttsClient = new TextToSpeechClient({
+          credentials,
+        });
+        console.log("TTS client initialized successfully");
+        return this.ttsClient;
+      } catch (initError: any) {
+        console.error("Client initialization error:", initError);
+        this.ttsClient = null;
+        throw new Error(`Failed to initialize TTS client: ${initError.message}`);
+      } finally {
+        this.ttsClientInitPromise = null;
+      }
+    })();
+
+    return this.ttsClientInitPromise;
   }
 
   async getAudioDuration(filePath: string): Promise<number> {
@@ -93,6 +132,17 @@ class AudioProcessor {
     });
 
     await Promise.all([...fileCleanup, ...dirCleanup]);
+    
+    // Clean up TTS client if it exists
+    if (this.ttsClient) {
+      try {
+        console.log("Closing TTS client");
+        await this.ttsClient.close();
+        this.ttsClient = null;
+      } catch (error) {
+        console.error("Error closing TTS client:", error);
+      }
+    }
     
     // Clear the sets
     this.tempFilePaths.clear();
@@ -168,46 +218,46 @@ class AudioProcessor {
     output_format?: string;
     voice_name: string;
   }): Promise<string> {
-    let client;
-
     try {
-      // Import TextToSpeechClient dynamically
-      const { TextToSpeechClient } = await import(
-        "@google-cloud/text-to-speech"
-      );
-      // Initialize client with proper error handling
-      try {
-        client = new TextToSpeechClient({
-          credentials,
-        });
-      } catch (initError: any) {
-        console.error("Client initialization error:", initError);
-        throw new Error(
-          `Failed to initialize TTS client: ${initError.message}`
-        );
-      }
-
+      console.log(`Processing TTS for voice: ${voice_name}, text length: ${textToSpeech.length}`);
+      
       if (!textToSpeech || !voice_name || !voice_id) {
         throw new Error("Missing required parameters for TTS");
       }
 
+      // Get the cached client instead of creating a new one each time
+      const client = await this.getTTSClient();
+
+      const ssmlGender = voices.find((v) => v.name === voice_name)?.ssmlGender === "MALE" ? 1 : 2;
+      
       const request = {
         input: { ssml: textToSpeech },
         voice: {
           languageCode: voice_id,
           name: voice_name,
-          ssmlGender:
-            voices.find((v) => v.name === voice_name)?.ssmlGender === "MALE"
-              ? 1
-              : 2,
+          ssmlGender,
         },
         audioConfig: {
           audioEncoding: (output_format as "MP3") || "MP3",
         },
       };
 
-      // Synthesize speech with proper error handling
-      const [response] = await client.synthesizeSpeech(request);
+      // Add timeout handling for the TTS request
+      console.log(`Starting TTS API call with ${TTS_TIMEOUT_MS}ms timeout`);
+      const startTime = Date.now();
+      
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error(`TTS request timed out after ${TTS_TIMEOUT_MS/1000} seconds`)), TTS_TIMEOUT_MS);
+      });
+
+      // Race the TTS request against the timeout
+      const [response] = await Promise.race([
+        client.synthesizeSpeech(request),
+        timeoutPromise
+      ]) as any;
+      
+      const apiCallTime = Date.now() - startTime;
+      console.log(`TTS API call completed in ${apiCallTime}ms`);
 
       if (!response.audioContent) {
         throw new Error("No audio content generated");
@@ -220,6 +270,7 @@ class AudioProcessor {
 
       // Convert to WAV for processing compatibility
       const wavPath = await this.convertAudioToWav(tempAudioPath);
+      console.log(`TTS processing completed successfully: ${wavPath}`);
 
       return wavPath;
     } catch (error: any) {
@@ -229,14 +280,6 @@ class AudioProcessor {
         name: error.name,
       });
       throw error;
-    } finally {
-      if (client) {
-        try {
-          await client.close();
-        } catch (closeError) {
-          console.error("Error closing client:", closeError);
-        }
-      }
     }
   }
 
@@ -252,16 +295,21 @@ class AudioProcessor {
       throw new Error("No TTS requests provided");
     }
 
+    console.log(`Processing ${ttsRequests.length} TTS requests in batches of ${BATCH_SIZE}`);
+    
     // Process in batches to avoid overwhelming the TTS service
     const results: string[] = [];
 
     for (let i = 0; i < ttsRequests.length; i += BATCH_SIZE) {
       const batch = ttsRequests.slice(i, i + BATCH_SIZE);
+      console.log(`Processing batch ${Math.floor(i/BATCH_SIZE) + 1} of ${Math.ceil(ttsRequests.length/BATCH_SIZE)}`);
+      
       const batchPromises = batch.map((request) => this.processTTS(request));
       const batchResults = await Promise.all(batchPromises);
       results.push(...batchResults);
     }
 
+    console.log(`Successfully processed all ${ttsRequests.length} TTS requests`);
     return results;
   }
 
@@ -655,11 +703,12 @@ const worker = new Worker<JobData>(
           currentOperation: "Processing audio files",
           startTime,
         });
-        
+        await job.updateProgress(5);
+
         ttsConvertedPaths = await audioProcessor.processTTSFiles(
           job.data.audioUrls
         );
-        totalSteps = job.data.audioUrls.length + 2; // Process files + separate original + combine
+        totalSteps = 3; // Process audio + separate original + combine
 
         completedSteps++;
         await job.updateProgress(
@@ -670,44 +719,55 @@ const worker = new Worker<JobData>(
         throw new Error("No audio URLs or TTS requests provided");
       }
 
+      // Separate original audio to get background track
       await job.updateData({
         ...job.data,
         currentOperation: "Separating background music",
       });
-      
-      const separatedPath = await audioProcessor.separateOriginalAudio(
+      const backgroundTrack = await audioProcessor.separateOriginalAudio(
         job.data.originalAudioUrl
       );
+
       completedSteps++;
       await job.updateProgress(Math.round((completedSteps / totalSteps) * 100));
       recordStepTime();
 
+      // Combine speech with background
       await job.updateData({
         ...job.data,
         currentOperation: "Combining speech with background",
       });
-      
-      const finalOutputPath =
-        await audioProcessor.combineAllSpeechWithBackground(
-          ttsConvertedPaths,
-          separatedPath,
-          job.data.transcript
-        );
+      const combinedAudioPath = await audioProcessor.combineAllSpeechWithBackground(
+        ttsConvertedPaths,
+        backgroundTrack,
+        job.data.transcript
+      );
+
       completedSteps++;
       await job.updateProgress(Math.round((completedSteps / totalSteps) * 100));
       recordStepTime();
 
+      // Upload to storage
       await job.updateData({
         ...job.data,
         currentOperation: "Finalizing and uploading",
       });
-      
-      const finalUrl = await audioProcessor.uploadToStorage(finalOutputPath);
-      console.log("Audio processing completed successfully", finalUrl);
-      return finalUrl;
-    } catch (error) {
-      console.error("Error processing audio:", error);
-      throw new Error(`Error processing audio: ${error}`);
+      const finalAudioUrl = await audioProcessor.uploadToStorage(
+        combinedAudioPath
+      );
+
+      completedSteps++;
+      await job.updateProgress(100);
+      recordStepTime();
+
+      // Return the final audio URL
+      return {
+        finalAudioUrl,
+        processingTime: Date.now() - startTime,
+      };
+    } catch (error: any) {
+      console.error("Job processing error:", error);
+      throw error;
     } finally {
       await audioProcessor.cleanup();
     }
@@ -718,28 +778,36 @@ const worker = new Worker<JobData>(
       port: redisPort,
       username: redisUserName,
       password: redisPassword,
-      maxRetriesPerRequest: null,
-      connectTimeout: 5000,
-      retryStrategy(times: number) {
-        const delay = Math.min(times * 50, 2000);
-        return delay;
-      }
     },
-    concurrency: 5,
+    concurrency: 2, // Process up to 2 jobs concurrently
+    removeOnComplete: {
+      age: 3600, // Keep completed jobs for 1 hour
+      count: 1000, // Keep the last 1000 completed jobs
+    },
+    removeOnFail: {
+      age: 24 * 3600, // Keep failed jobs for 24 hours
+      count: 100, // Keep the last 100 failed jobs
+    },
   }
 );
 
-worker.on("progress", (job, progress) => {
-  console.log(`Job ${job.id} progress: ${progress}%`);
+worker.on("completed", async (job, result) => {
+  console.log(`Job ${job.id} completed with result:`, result);
+  try {
+    await notifyAPI(job);
+  } catch (error) {
+    console.error(`Error notifying API for job ${job.id}:`, error);
+  }
 });
 
-worker.on("completed", async (job) => {
-  console.log(`Job ${job.id} completed successfully!`);
-  await notifyAPI(job);
+worker.on("failed", (job, error) => {
+  console.error(`Job ${job?.id} failed with error:`, error);
 });
 
-worker.on("failed", (job, err) => {
-  console.log(`Job ${job?.id} failed with error: ${err.message}`);
+worker.on("error", (error) => {
+  console.error("Worker error:", error);
 });
 
-export { worker };
+console.log("Worker started");
+
+export default worker;
