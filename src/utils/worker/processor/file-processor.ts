@@ -120,4 +120,24 @@ export class FileProcessor {
 
     return wavPath;
   }
+
+  async getAudioDuration(filePath: string): Promise<number> {
+    try {
+      await this.verifyFile(filePath);
+
+      const { stdout } = await execAsync(
+        `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${filePath}"`
+      );
+
+      const duration = parseFloat(stdout);
+      if (isNaN(duration)) {
+        throw new Error("Failed to parse audio duration");
+      }
+
+      return duration;
+    } catch (error) {
+      console.error(`Failed to get audio duration for ${filePath}:`, error);
+      throw new Error(`Failed to get audio duration: ${error}`);
+    }
+  }
 }

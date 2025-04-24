@@ -8,6 +8,10 @@ import type {
 import { BATCH_SIZE, TTS_TIMEOUT_MS } from "./constants";
 import fs from "fs/promises";
 import { readFileSync } from "fs";
+import { exec } from "child_process";
+import { promisify } from "util";
+
+const execAsync = promisify(exec);
 
 interface EmotionWeights {
   happiness: number;
@@ -56,6 +60,38 @@ export class ZyphraTTS {
     };
   }
 
+  private async concatenateReferenceAudios(
+    primaryAudioPath: string,
+    secondaryAudioPath: string = "fallback_reference.wav",
+    minSeconds: number = 10
+  ): Promise<string> {
+    try {
+      const primaryDuration = await this.fileProcessor.getAudioDuration(
+        primaryAudioPath
+      );
+
+      if (primaryDuration >= minSeconds) {
+        return readFileSync(primaryAudioPath).toString("base64");
+      }
+
+      const tempPath = await this.fileProcessor.createTempPath(
+        "combined_reference",
+        "wav"
+      );
+
+      // Concatenate two different audio files
+      const ffmpegCmd = `ffmpeg -i "${primaryAudioPath}" -i "${secondaryAudioPath}" \
+        -filter_complex "[0:a][1:a]concat=n=2:v=0:a=1[out]" \
+        -map "[out]" "${tempPath}"`;
+
+      await execAsync(ffmpegCmd);
+      return readFileSync(tempPath).toString("base64");
+    } catch (error) {
+      console.error("Failed to concatenate reference audios:", error);
+      throw error;
+    }
+  }
+
   async getZyphraClient(): Promise<ZyphraClient> {
     if (this.zyphraClientTTS) return this.zyphraClientTTS;
     if (this.zyphraClientPromise) return this.zyphraClientPromise;
@@ -100,7 +136,8 @@ export class ZyphraTTS {
       // Get reference voice if provided
       let speaker_audio: string | undefined;
       try {
-        speaker_audio = readFileSync("reference_voice.wav").toString("base64");
+        // speaker_audio = readFileSync("reference_voice.wav").toString("base64");
+        speaker_audio = await this.concatenateReferenceAudios("reference_voice.wav", "secondary_reference.wav");
       } catch (error) {
         console.warn("No reference voice found, using default voice");
       }
