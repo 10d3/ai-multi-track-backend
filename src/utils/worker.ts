@@ -63,7 +63,9 @@ class AudioProcessor {
     console.log("Initializing new TTS client");
     this.ttsClientInitPromise = (async () => {
       try {
-        const { TextToSpeechClient } = await import("@google-cloud/text-to-speech");
+        const { TextToSpeechClient } = await import(
+          "@google-cloud/text-to-speech"
+        );
         this.ttsClient = new TextToSpeechClient({
           credentials,
         });
@@ -72,7 +74,9 @@ class AudioProcessor {
       } catch (initError: any) {
         console.error("Client initialization error:", initError);
         this.ttsClient = null;
-        throw new Error(`Failed to initialize TTS client: ${initError.message}`);
+        throw new Error(
+          `Failed to initialize TTS client: ${initError.message}`
+        );
       } finally {
         this.ttsClientInitPromise = null;
       }
@@ -95,7 +99,7 @@ class AudioProcessor {
 
   async cleanup(): Promise<void> {
     console.log("Starting cleanup...");
-    
+
     // First clean up files
     const fileCleanup = Array.from(this.tempFilePaths).map(async (file) => {
       try {
@@ -132,7 +136,7 @@ class AudioProcessor {
     });
 
     await Promise.all([...fileCleanup, ...dirCleanup]);
-    
+
     // Clean up TTS client if it exists
     if (this.ttsClient) {
       try {
@@ -143,11 +147,11 @@ class AudioProcessor {
         console.error("Error closing TTS client:", error);
       }
     }
-    
+
     // Clear the sets
     this.tempFilePaths.clear();
     this.tempDirs.clear();
-    
+
     console.log("Cleanup completed");
   }
 
@@ -219,8 +223,10 @@ class AudioProcessor {
     voice_name: string;
   }): Promise<string> {
     try {
-      console.log(`Processing TTS for voice: ${voice_name}, text length: ${textToSpeech.length}`);
-      
+      console.log(
+        `Processing TTS for voice: ${voice_name}, text length: ${textToSpeech.length}`
+      );
+
       if (!textToSpeech || !voice_name || !voice_id) {
         throw new Error("Missing required parameters for TTS");
       }
@@ -228,8 +234,11 @@ class AudioProcessor {
       // Get the cached client instead of creating a new one each time
       const client = await this.getTTSClient();
 
-      const ssmlGender = voices.find((v) => v.name === voice_name)?.ssmlGender === "MALE" ? 1 : 2;
-      
+      const ssmlGender =
+        voices.find((v) => v.name === voice_name)?.ssmlGender === "MALE"
+          ? 1
+          : 2;
+
       const request = {
         input: { ssml: textToSpeech },
         voice: {
@@ -245,17 +254,25 @@ class AudioProcessor {
       // Add timeout handling for the TTS request
       console.log(`Starting TTS API call with ${TTS_TIMEOUT_MS}ms timeout`);
       const startTime = Date.now();
-      
+
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error(`TTS request timed out after ${TTS_TIMEOUT_MS/1000} seconds`)), TTS_TIMEOUT_MS);
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                `TTS request timed out after ${TTS_TIMEOUT_MS / 1000} seconds`
+              )
+            ),
+          TTS_TIMEOUT_MS
+        );
       });
 
       // Race the TTS request against the timeout
-      const [response] = await Promise.race([
+      const [response] = (await Promise.race([
         client.synthesizeSpeech(request),
-        timeoutPromise
-      ]) as any;
-      
+        timeoutPromise,
+      ])) as any;
+
       const apiCallTime = Date.now() - startTime;
       console.log(`TTS API call completed in ${apiCallTime}ms`);
 
@@ -295,21 +312,29 @@ class AudioProcessor {
       throw new Error("No TTS requests provided");
     }
 
-    console.log(`Processing ${ttsRequests.length} TTS requests in batches of ${BATCH_SIZE}`);
-    
+    console.log(
+      `Processing ${ttsRequests.length} TTS requests in batches of ${BATCH_SIZE}`
+    );
+
     // Process in batches to avoid overwhelming the TTS service
     const results: string[] = [];
 
     for (let i = 0; i < ttsRequests.length; i += BATCH_SIZE) {
       const batch = ttsRequests.slice(i, i + BATCH_SIZE);
-      console.log(`Processing batch ${Math.floor(i/BATCH_SIZE) + 1} of ${Math.ceil(ttsRequests.length/BATCH_SIZE)}`);
-      
+      console.log(
+        `Processing batch ${Math.floor(i / BATCH_SIZE) + 1} of ${Math.ceil(
+          ttsRequests.length / BATCH_SIZE
+        )}`
+      );
+
       const batchPromises = batch.map((request) => this.processTTS(request));
       const batchResults = await Promise.all(batchPromises);
       results.push(...batchResults);
     }
 
-    console.log(`Successfully processed all ${ttsRequests.length} TTS requests`);
+    console.log(
+      `Successfully processed all ${ttsRequests.length} TTS requests`
+    );
     return results;
   }
 
@@ -643,7 +668,7 @@ const worker = new Worker<JobData>(
             estimatedRemainingTime / 1000
           )} seconds`
         );
-        
+
         // Add detailed step information to job data
         job.updateData({
           ...job.data,
@@ -653,11 +678,11 @@ const worker = new Worker<JobData>(
             elapsedTime,
             estimatedRemainingTime,
             stepTimes,
-            lastStepName: getCurrentStepName(completedSteps)
-          }
+            lastStepName: getCurrentStepName(completedSteps),
+          },
         });
       };
-      
+
       // Helper function to get descriptive step names
       const getCurrentStepName = (step: number) => {
         if (job.data.ttsRequests && job.data.ttsRequests.length > 0) {
@@ -678,7 +703,7 @@ const worker = new Worker<JobData>(
       if (job.data.ttsRequests && job.data.ttsRequests.length > 0) {
         // Process TTS requests
         await job.updateProgress(5); // Starting progress
-        
+
         // Update with more detailed information
         await job.updateData({
           ...job.data,
@@ -737,11 +762,12 @@ const worker = new Worker<JobData>(
         ...job.data,
         currentOperation: "Combining speech with background",
       });
-      const combinedAudioPath = await audioProcessor.combineAllSpeechWithBackground(
-        ttsConvertedPaths,
-        backgroundTrack,
-        job.data.transcript
-      );
+      const combinedAudioPath =
+        await audioProcessor.combineAllSpeechWithBackground(
+          ttsConvertedPaths,
+          backgroundTrack,
+          job.data.transcript
+        );
 
       completedSteps++;
       await job.updateProgress(Math.round((completedSteps / totalSteps) * 100));
