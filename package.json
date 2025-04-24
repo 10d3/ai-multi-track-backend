@@ -13,6 +13,7 @@
     "@google-cloud/storage": "^7.13.0",
     "@google-cloud/text-to-speech": "^6.0.1",
     "@prisma/client": "5.17.0",
+    "@t3-oss/env-core": "^0.13.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
@@ -36,12 +37,13 @@
     "prisma": "5.17.0",
     "uploadthing": "^7.0.2",
     "uuid": "^10.0.0",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "zod": "^3.24.3"
   },
   "scripts": {
     "migrate": "prisma migrate dev",
     "dev": "bun run --hot src/server.ts",
-    "worker": "bun run --hot src/utils/worker.ts",
+    "worker": "bun run --hot src/utils/worker/index.ts",
     "websocket": "bun run --hot src/utils/webSocket.ts",
     "start:all": "concurrently \"bun run dev\" \"bun run worker\" \"bun run websocket\""
   }
