@@ -47,10 +47,23 @@ export interface TTSRequest {
   voice_name: string;
 }
 
+export interface Emotion{
+  happiness: number,
+  neutral: number,
+  sadness: number,
+  disgust: number,
+  fear: number,
+  suprise: number,
+  anger: number,
+  other: number,
+}
+
 export interface Transcript {
   start: number;
   end: number;
   text: string;
+  speaker: string
+  emotion: any
 }
 
 export interface JobData {

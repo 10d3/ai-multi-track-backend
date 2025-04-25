@@ -14,7 +14,6 @@
 //   url      = env("DATABASE_URL")
 // }
 
-
 // model User {
 //   id    Int     @id @default(autoincrement())
 //   email String  @unique
@@ -30,7 +29,7 @@
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
-  provider = "prisma-client-js"
+  provider   = "prisma-client-js"
   engineType = "binary"
 }
 
@@ -138,6 +137,7 @@ model Transcript {
   textTranslatedSSML String?
   voice              String?
   sentiment          String
+  emotion            Json?
   start              Int
   end                Int
   confidence         Int

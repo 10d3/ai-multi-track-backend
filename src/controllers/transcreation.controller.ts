@@ -57,6 +57,8 @@ export const formatTranscreationForWorker = async (
     start: t.start / 1000, // Convert milliseconds to seconds if needed
     end: t.end / 1000, // Convert milliseconds to seconds if needed
     text: t.textTranslated || t.text, // Use translated text if available, otherwise original
+    speaker: t.speaker,
+    emotion: t.emotion
   }));
 
   // Get language code for TTS
@@ -73,6 +75,7 @@ export const formatTranscreationForWorker = async (
   const ttsRequests = transcreation.transcript.map((t) => {
     // Format text as SSML for better TTS results
     const ssmlText = `<speak>${t.textTranslatedSSML || t.textTranslated || t.text}</speak>`;
+    const emotion = t.emotion
 
     // Get voice information from transcript or use defaults
     let voiceName = t.voice || '';
@@ -141,6 +144,7 @@ export const formatTranscreationForWorker = async (
       voice_id: voiceId,
       voice_name: voiceName,
       output_format: "MP3",
+      emotion
     };
   });
 
