@@ -1,5 +1,5 @@
-# Use Node.js as base image with Python 3.10
-FROM node:18-bullseye
+# Use Node.js with Debian Bookworm (which has Python 3.11)
+FROM node:18-bookworm
 
 # Install Bun
 RUN curl -fsSL https://bun.sh/install | bash
@@ -17,17 +17,14 @@ COPY requirements.txt ./
 # Set Python encoding environment variable to fix compilation issues
 ENV PYTHONIOENCODING=utf-8
 
-# Install system dependencies including Python 3.10
+# Install system dependencies
 RUN apt-get update && \
-    apt-get install -y software-properties-common && \
-    add-apt-repository ppa:deadsnakes/ppa -y && \
-    apt-get update && \
-    apt-get install -y python3.10 python3.10-venv python3.10-dev python3-pip ffmpeg && \
+    apt-get install -y python3 python3-pip python3-venv ffmpeg && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Create and activate Python 3.10 virtual environment
-RUN python3.10 -m venv /opt/venv
+# Create and activate Python virtual environment
+RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Install Python dependencies in virtual environment
