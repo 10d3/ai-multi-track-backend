@@ -14,6 +14,9 @@ COPY package*.json ./
 # Copy requirements.txt for Python dependencies
 COPY requirements.txt ./
 
+# Set Python encoding environment variable to fix compilation issues
+ENV PYTHONIOENCODING=utf-8
+
 # Install system dependencies
 RUN apt-get update && \
     apt-get install -y python3 python3-pip python3-venv ffmpeg && \
