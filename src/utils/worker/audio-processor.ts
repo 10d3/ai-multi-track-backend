@@ -1,32 +1,37 @@
 import { promisify } from "util";
-import type { Transcript, TTSRequest } from "../types/type";
+import type { Transcript, TTSRequest, ZyphraTTSRequest } from "../types/type";
 import { AudioAnalyzer } from "./processor/audio-analyzer";
 import { AudioCombiner } from "./processor/audio-combiner";
 import { FileProcessor } from "./processor/file-processor";
 import { StorageProcessor } from "./processor/storage-processor";
-import { TTSProcessor } from "./processor/tts-processor";
+import { ZyphraTTS } from "./processor/zyphra-tts-processor";
+import { SpeakerReferenceProcessor } from "./processor/speaker-reference-processor";
 import path from "path";
 import { exec } from "child_process";
-import fs from "fs/promises"
+import fs from "fs/promises";
 
 const execAsync = promisify(exec);
 
 export class AudioProcessor {
   private fileProcessor: FileProcessor;
-  private ttsProcessor: TTSProcessor;
+  private zyphraTTS: ZyphraTTS;
   private audioAnalyzer: AudioAnalyzer;
   private audioCombiner: AudioCombiner;
   private storageProcessor: StorageProcessor;
+  private speakerReferenceProcessor: SpeakerReferenceProcessor;
 
   constructor() {
     this.fileProcessor = new FileProcessor();
-    this.ttsProcessor = new TTSProcessor(this.fileProcessor);
+    this.zyphraTTS = new ZyphraTTS(this.fileProcessor);
     this.audioAnalyzer = new AudioAnalyzer(this.fileProcessor);
     this.audioCombiner = new AudioCombiner(
       this.fileProcessor,
       this.audioAnalyzer
     );
     this.storageProcessor = new StorageProcessor(this.fileProcessor);
+    this.speakerReferenceProcessor = new SpeakerReferenceProcessor(
+      this.fileProcessor
+    );
   }
 
   async init(): Promise<void> {
@@ -46,11 +51,58 @@ export class AudioProcessor {
     return convertedPaths;
   }
 
-  async processMultipleTTS(ttsRequests: TTSRequest[]): Promise<string[]> {
-    return this.ttsProcessor.processMultipleTTS(ttsRequests);
+  async processMultipleTTS(transcript: Transcript[], ttsRequests: TTSRequest[]): Promise<string[]> {
+    // Group requests by speaker to ensure we use the correct reference audio for each speaker
+    const mergedData = transcript.map((transcriptItem, index) => {
+      const ttsRequest = ttsRequests[index];
+      return { ...transcriptItem, ...ttsRequest };
+    });
+
+    const requestsBySpeaker: { [speaker: string]: ZyphraTTSRequest[] } = {};
+
+    for (const request of mergedData) {
+      const speaker = request.speaker || "default";
+      if (!requestsBySpeaker[speaker]) {
+        requestsBySpeaker[speaker] = [];
+      }
+
+      // Convert TTSRequest to ZyphraTTSRequest
+      const zyphraRequest: ZyphraTTSRequest = {
+        ...request,
+        emotion: request.emotion || undefined,
+      };
+
+      requestsBySpeaker[speaker].push(zyphraRequest);
+    }
+
+    // Process each speaker's requests with their reference audio
+    const allResults: string[] = [];
+    for (const speaker in requestsBySpeaker) {
+      const speakerRequests = requestsBySpeaker[speaker];
+
+      // Get reference audio for this speaker if available
+      const referenceAudio =
+        this.speakerReferenceProcessor.getReferenceAudio(speaker);
+      if (referenceAudio) {
+        // Set reference audio path for all requests from this speaker
+        speakerRequests.forEach((req) => {
+          req.referenceAudioPath = referenceAudio;
+        });
+      }
+
+      const results = await this.zyphraTTS.processZypMultipleTTS(
+        speakerRequests
+      );
+      allResults.push(...(results as string[]));
+    }
+
+    return allResults;
   }
 
-  async separateOriginalAudio(originalAudioUrl: string): Promise<string> {
+  async separateOriginalAudio(
+    originalAudioUrl: string,
+    transcript: Transcript[]
+  ): Promise<string> {
     const originalPath = await this.fileProcessor.downloadAndConvertAudio(
       originalAudioUrl
     );
@@ -69,12 +121,23 @@ export class AudioProcessor {
         throw new Error("No subdirectories found in Spleeter output.");
       }
 
+      // Get vocals for voice cloning
+      const vocalsPath = path.join(spleeterOutputDir, subdirs[0], "vocals.wav");
+      await this.fileProcessor.verifyFile(vocalsPath);
+
+      // Get accompaniment for background
       const accompanimentPath = path.join(
         spleeterOutputDir,
         subdirs[0],
         "accompaniment.wav"
       );
       await this.fileProcessor.verifyFile(accompanimentPath);
+
+      // Extract speaker references using transcript timestamps
+      await this.speakerReferenceProcessor.extractSpeakerReferences(
+        vocalsPath,
+        transcript
+      );
 
       return accompanimentPath;
     } catch (error) {

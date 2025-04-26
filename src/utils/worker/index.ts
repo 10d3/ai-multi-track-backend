@@ -49,6 +49,7 @@ const worker = new Worker<JobData>(
         });
 
         ttsConvertedPaths = await audioProcessor.processMultipleTTS(
+          job.data.transcript,
           job.data.ttsRequests
         );
         totalSteps = job.data.ttsRequests.length + 2;
@@ -78,7 +79,8 @@ const worker = new Worker<JobData>(
         currentOperation: "Separating background music",
       });
       const backgroundTrack = await audioProcessor.separateOriginalAudio(
-        job.data.originalAudioUrl
+        job.data.originalAudioUrl,
+        job.data.transcript
       );
 
       completedSteps++;

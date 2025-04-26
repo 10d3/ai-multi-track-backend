@@ -1,8 +1,8 @@
-export interface Transcript {
-  start: number;
-  end: number;
-  text: string;
-}
+// export interface Transcript {
+//   start: number;
+//   end: number;
+//   text: string;
+// }
 
 // export interface JobData {
 //   audioUrls: string[];
@@ -38,7 +38,7 @@ export interface JobData {
 }
 
 import type { EmotionWeights } from "@zyphra/client";
-import { Job } from "bullmq";
+// import { Job } from "bullmq";
 
 export interface TTSRequest {
   textToSpeech: string;
@@ -64,6 +64,7 @@ export interface Transcript {
   text: string;
   speaker: string
   emotion: any
+  voiceId: string
 }
 
 export interface JobData {
@@ -104,4 +105,5 @@ export type ZyphraModel = "zonos-v0.1-transformer" | "zonos-v0.1-hybrid";
 export interface ZyphraTTSRequest extends TTSRequest {
   language_iso_code?: string;
   emotion?: EmotionWeights;
+  referenceAudioPath?: string;
 }

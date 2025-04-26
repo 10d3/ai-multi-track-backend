@@ -125,6 +125,7 @@ export class ZyphraTTS {
     voice_name,
     emotion,
     language_iso_code,
+    referenceAudioPath
   }: ZyphraTTSRequest): Promise<string> {
     try {
       if (!textToSpeech || !voice_name || !voice_id) {
@@ -135,19 +136,19 @@ export class ZyphraTTS {
       const isJapanese = voice_id.startsWith("ja");
 
       // Get reference voice if provided
-      let speaker_audio: string | undefined;
-      try {
-        // speaker_audio = readFileSync("reference_voice.wav").toString("base64");
-        speaker_audio = await this.concatenateReferenceAudios("reference_voice.wav", "secondary_reference.wav");
-      } catch (error) {
-        console.warn("No reference voice found, using default voice");
-      }
+      // let speaker_audio: string | undefined;
+      // try {
+      //   // speaker_audio = readFileSync("reference_voice.wav").toString("base64");
+      //   speaker_audio = await this.concatenateReferenceAudios("reference_voice.wav", "secondary_reference.wav");
+      // } catch (error) {
+      //   console.warn("No reference voice found, using default voice");
+      // }
 
       const baseParams: TTSParams = {
         text: textToSpeech,
         speaking_rate: 15,
         mime_type: "audio/mp3",
-        speaker_audio,
+        speaker_audio : referenceAudioPath,
         language_iso_code: language_iso_code || (isJapanese ? "ja" : "en-us"),
       };
 
