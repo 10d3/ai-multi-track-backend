@@ -6,9 +6,6 @@ export const env = createEnv({
   server: {
     DATABASE_URL: z.string().url(),
     // OPEN_AI_API_KEY: z.string().min(1),
-    UPLOADTHING_SECRET: z.string().min(1),
-    UPLOADTHING_APP_ID: z.string().min(1),
-    UPLOADTHING_TOKEN: z.string().min(1),
     JSWT_SECRET: z.string().min(1),
     WORKER_URL: z.string().min(1),
     WORKER_PORT: z.number().min(1),
@@ -30,9 +27,6 @@ export const env = createEnv({
   runtimeEnvStrict: {
     DATABASE_URL: process.env.DATABASE_URL,
     // OPEN_AI_API_KEY: process.env.OPEN_AI_API_KEY,
-    UPLOADTHING_SECRET: process.env.UPLOADTHING_SECRET,
-    UPLOADTHING_APP_ID: process.env.UPLOADTHING_APP_ID,
-    UPLOADTHING_TOKEN: process.env.UPLOADTHING_TOKEN,
     JSWT_SECRET: process.env.JSWT_SECRET,
     WORKER_URL: process.env.WORKER_URL,
     WORKER_PORT: process.env.WORKER_PORT,
