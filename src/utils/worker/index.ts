@@ -1,10 +1,8 @@
 import { Worker } from "bullmq";
-// import { AudioProcessor } from "./AudioProcessor";
 import { notifyAPI } from "../../services/notifyAPi";
 import { redisHost, redisPort, redisUserName, redisPassword } from "../queue";
 import type { JobData } from "../types/type";
 import { AudioProcessor } from "./audio-processor";
-// import type { JobData } from "./types";
 
 const worker = new Worker<JobData>(
   "audio-processing",
