@@ -1,5 +1,5 @@
-# Use Node.js with Debian Bookworm (which has Python 3.11)
-FROM node:18-bookworm
+# Use Node.js as base image
+FROM node:18-alpine
 
 # Install Bun
 RUN curl -fsSL https://bun.sh/install | bash
@@ -13,9 +13,6 @@ COPY package*.json ./
 
 # Copy requirements.txt for Python dependencies
 COPY requirements.txt ./
-
-# Set Python encoding environment variable to fix compilation issues
-ENV PYTHONIOENCODING=utf-8
 
 # Install system dependencies
 RUN apt-get update && \
