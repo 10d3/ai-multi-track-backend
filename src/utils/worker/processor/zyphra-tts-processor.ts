@@ -10,7 +10,7 @@ import fs from "fs/promises";
 import { readFileSync } from "fs";
 import { exec } from "child_process";
 import { promisify } from "util";
-import { env } from "@env";
+// import { env } from "@env";
 
 const execAsync = promisify(exec);
 
@@ -101,7 +101,7 @@ export class ZyphraTTS {
       try {
         const { ZyphraClient } = await import("@zyphra/client");
         this.zyphraClientTTS = new ZyphraClient({
-          apiKey: env.ZYPHRA_API_KEY,
+          apiKey: process.env.ZYPHRA_API_KEY as string,
         });
         return this.zyphraClientTTS;
       } catch (initError: any) {
