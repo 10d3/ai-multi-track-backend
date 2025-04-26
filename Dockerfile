@@ -17,9 +17,20 @@ COPY requirements.txt ./
 # Set Python encoding environment variable to fix compilation issues
 ENV PYTHONIOENCODING=utf-8
 
-# Install system dependencies
+# Install system dependencies and Python 3.10
 RUN apt-get update && \
-    apt-get install -y python3 python3-pip python3-venv ffmpeg && \
+    apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev \
+    libssl-dev libreadline-dev libffi-dev curl wget ffmpeg python3-pip python3-venv && \
+    wget https://www.python.org/ftp/python/3.10.0/Python-3.10.0.tgz && \
+    tar -xf Python-3.10.0.tgz && \
+    cd Python-3.10.0 && \
+    ./configure --enable-optimizations && \
+    make -j $(nproc) && \
+    make altinstall && \
+    cd .. && \
+    rm -rf Python-3.10.0 Python-3.10.0.tgz && \
+    ln -s /usr/local/bin/python3.10 /usr/local/bin/python3 && \
+    ln -s /usr/local/bin/pip3.10 /usr/local/bin/pip3 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
