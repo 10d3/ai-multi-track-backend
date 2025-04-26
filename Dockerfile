@@ -1,6 +1,9 @@
 # Use Node.js as base image
 FROM node:18-alpine
 
+# Install required dependencies for Bun and Python
+RUN apk add --no-cache curl bash python3 py3-pip ffmpeg build-base
+
 # Install Bun
 RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:${PATH}"
@@ -14,11 +17,8 @@ COPY package*.json ./
 # Copy requirements.txt for Python dependencies
 COPY requirements.txt ./
 
-# Install system dependencies
-RUN apt-get update && \
-    apt-get install -y python3 python3-pip python3-venv ffmpeg && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+# Set Python encoding environment variable to fix compilation issues
+ENV PYTHONIOENCODING=utf-8
 
 # Create and activate Python virtual environment
 RUN python3 -m venv /opt/venv
@@ -42,7 +42,7 @@ RUN bun --bunx prisma generate
 EXPOSE 8090
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8090/health || exit 1
+    CMD wget -q --spider http://localhost:8090/health || exit 1
 
 # Define command to start the application
 CMD ["sh", "-c", "bun dev & bun worker & bun websocket"]
