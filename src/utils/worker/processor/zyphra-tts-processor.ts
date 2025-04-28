@@ -395,10 +395,23 @@ export class ZyphraTTS {
         }/${Math.ceil(ttsRequests.length / BATCH_SIZE)} (size: ${batch.length})`
       );
 
-      const batchPromises = batch.map((request) => this.processZypTTS(request));
-      console.log(`[ZyphraTTS] Waiting for batch to complete`);
+      // Process each request in the batch with individual error handling
+      const batchResults = await Promise.all(
+        batch.map(async (request) => {
+          try {
+            return await this.processZypTTS(request);
+          } catch (error) {
+            console.error(`[ZyphraTTS] Error processing request:`, {
+              text: request.textToSpeech?.substring(0, 50) + "...",
+              voice: request.voice_name,
+              error: error instanceof Error ? error.message : String(error)
+            });
+            // Re-throw to be handled by the caller
+            throw error;
+          }
+        })
+      );
 
-      const batchResults = await Promise.all(batchPromises);
       console.log(`[ZyphraTTS] Batch completed successfully`);
 
       results.push(...batchResults);
