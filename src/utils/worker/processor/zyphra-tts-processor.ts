@@ -206,8 +206,14 @@ export class ZyphraTTS {
 
       const wavPath = await this.fileProcessor.convertAudioToWav(tempAudioPath);
       return wavPath;
-    } catch (error) {
-      console.error("TTS Error:", error);
+    } catch (error: any) {
+      console.error("TTS Error:", {
+        message: error.message,
+        stack: error.stack,
+        code: error.code,
+        details: error.details || 'No additional details',
+        params: { voice_id, voice_name, textLength: textToSpeech?.length }
+      });
       throw error;
     }
   }

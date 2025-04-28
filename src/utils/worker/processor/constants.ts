@@ -7,7 +7,7 @@ export const BATCH_SIZE = 5;
 export const TEMP_DIR = path.resolve(process.cwd(), "temp");
 export const BUCKET_NAME = process.env.BUCKET_NAME as string;
 export const SIGNED_URL_EXPIRY = "03-09-2491";
-export const TTS_TIMEOUT_MS = 60000; // 60 seconds timeout for TTS requests
+export const TTS_TIMEOUT_MS = 120000; // 60 seconds timeout for TTS requests
 
 export const FFMPEG_DEFAULTS = {
   SAMPLE_RATE: 44100,
