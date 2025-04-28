@@ -135,20 +135,22 @@ export class ZyphraTTS {
       const client = await this.getZyphraClient();
       const isJapanese = voice_id.startsWith("ja");
 
-      // Get reference voice if provided
-      // let speaker_audio: string | undefined;
-      // try {
-      //   // speaker_audio = readFileSync("reference_voice.wav").toString("base64");
-      //   speaker_audio = await this.concatenateReferenceAudios("reference_voice.wav", "secondary_reference.wav");
-      // } catch (error) {
-      //   console.warn("No reference voice found, using default voice");
-      // }
+      // Process reference audio if provided
+      let speaker_audio: string | undefined;
+      if (referenceAudioPath) {
+        try {
+          // Convert the file path to base64 encoded string
+          speaker_audio = readFileSync(referenceAudioPath).toString("base64");
+        } catch (error) {
+          console.warn("Failed to read reference audio:", error);
+        }
+      }
 
       const baseParams: TTSParams = {
         text: textToSpeech,
         speaking_rate: 15,
         mime_type: "audio/mp3",
-        speaker_audio : referenceAudioPath,
+        speaker_audio,
         language_iso_code: language_iso_code || (isJapanese ? "ja" : "en-us"),
       };
 
@@ -156,7 +158,6 @@ export class ZyphraTTS {
         ? {
             ...baseParams,
             model: "zonos-v0.1-hybrid",
-            // language_iso_code: "ja",
             vqscore: 0.7,
             speaker_noised: true,
             fmax: 20000,
@@ -165,7 +166,6 @@ export class ZyphraTTS {
             ...baseParams,
             model: "zonos-v0.1-transformer",
             emotion: emotion || this.getDefaultEmotions(),
-            // pitchStd: 50.0,
           };
 
       const timeoutPromise = new Promise((_, reject) => {
@@ -173,7 +173,7 @@ export class ZyphraTTS {
           () =>
             reject(
               new Error(
-                `TTS request timed out after ${TTS_TIMEOUT_MS + 60000 / 1000} seconds`
+                `TTS request timed out after ${TTS_TIMEOUT_MS / 1000} seconds`
               )
             ),
           TTS_TIMEOUT_MS
@@ -189,11 +189,8 @@ export class ZyphraTTS {
         throw new Error("No audio content generated");
       }
 
-      // Inspect the response structure
-      console.log("TTS API Response:", response);
-
-      // Extract audio data (adjust based on actual response structure)
-      const audioData = response.audioData || response.data || response; // Replace with the correct property
+      // Extract audio data from response
+      const audioData = response.audioData || response.data || response;
 
       if (!audioData) {
         throw new Error("Audio data not found in the response");
@@ -215,14 +212,14 @@ export class ZyphraTTS {
     }
   }
 
-  async processZypMultipleTTS(ttsRequests: any): Promise<String[]> {
+  async processZypMultipleTTS(ttsRequests: ZyphraTTSRequest[]): Promise<string[]> {
     if (!ttsRequests?.length) {
       throw new Error("No TTS requests provided");
     }
     const results: string[] = [];
     for (let i = 0; i < ttsRequests.length; i += BATCH_SIZE) {
       const batch = ttsRequests.slice(i, i + BATCH_SIZE);
-      const batchPromises = batch.map((request: any) =>
+      const batchPromises = batch.map((request) =>
         this.processZypTTS(request)
       );
       const batchResults = await Promise.all(batchPromises);
