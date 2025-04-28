@@ -1,4 +1,4 @@
-# version: '3.8'
+version: '3.8'
 
 services:
   sayitai-api:
@@ -13,23 +13,40 @@ services:
       - REDIS_USERNAME=default
       - REDIS_PASSWORD=zr0ack6CP4RRUwAUOidnmn0qMnYeo6SiZ7lkFjlChC3JEsbQp6EeUaOYXQApd6zx
     labels:
-       - traefik.enable=true
-       - traefik.http.middlewares.gzip.compress=true
-       - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
-       - traefik.http.routers.http-0-n4sgg0gkw0g040cog4os4ck8.entryPoints=http
-       - traefik.http.routers.http-0-n4sgg0gkw0g040cog4os4ck8.middlewares=redirect-to-https
-       - traefik.http.routers.http-0-n4sgg0gkw0g040cog4os4ck8.rule=Host(`api.sayitai.com`) && PathPrefix(`/`)
-       - traefik.http.routers.http-0-n4sgg0gkw0g040cog4os4ck8.service=http-0-n4sgg0gkw0g040cog4os4ck8
-       - traefik.http.routers.https-0-n4sgg0gkw0g040cog4os4ck8.entryPoints=https
-       - traefik.http.routers.https-0-n4sgg0gkw0g040cog4os4ck8.middlewares=gzip
-       - traefik.http.routers.https-0-n4sgg0gkw0g040cog4os4ck8.rule=Host(`api.sayitai.com`) && PathPrefix(`/`)
-       - traefik.http.routers.https-0-n4sgg0gkw0g040cog4os4ck8.service=https-0-n4sgg0gkw0g040cog4os4ck8
-       - traefik.http.routers.https-0-n4sgg0gkw0g040cog4os4ck8.tls.certresolver=letsencrypt
-       - traefik.http.routers.https-0-n4sgg0gkw0g040cog4os4ck8.tls=true
-       - traefik.http.services.http-0-n4sgg0gkw0g040cog4os4ck8.loadbalancer.server.port=3001
-       - traefik.http.services.https-0-n4sgg0gkw0g040cog4os4ck8.loadbalancer.server.port=3001
+      - traefik.enable=true
+      - traefik.http.middlewares.gzip.compress=true
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+
+      # Original API configuration (port 3001)
+      - traefik.http.routers.http-0-n4sgg0gkw0g040cog4os4ck8.entryPoints=http
+      - traefik.http.routers.http-0-n4sgg0gkw0g040cog4os4ck8.middlewares=redirect-to-https
+      - traefik.http.routers.http-0-n4sgg0gkw0g040cog4os4ck8.rule=Host(`api.sayitai.com`) && PathPrefix(`/`) && !PathPrefix(`/v1`)
+      - traefik.http.routers.http-0-n4sgg0gkw0g040cog4os4ck8.service=http-0-n4sgg0gkw0g040cog4os4ck8
+      - traefik.http.routers.https-0-n4sgg0gkw0g040cog4os4ck8.entryPoints=https
+      - traefik.http.routers.https-0-n4sgg0gkw0g040cog4os4ck8.middlewares=gzip
+      - traefik.http.routers.https-0-n4sgg0gkw0g040cog4os4ck8.rule=Host(`api.sayitai.com`) && PathPrefix(`/`) && !PathPrefix(`/v1`)
+      - traefik.http.routers.https-0-n4sgg0gkw0g040cog4os4ck8.service=https-0-n4sgg0gkw0g040cog4os4ck8
+      - traefik.http.routers.https-0-n4sgg0gkw0g040cog4os4ck8.tls.certresolver=letsencrypt
+      - traefik.http.routers.https-0-n4sgg0gkw0g040cog4os4ck8.tls=true
+      - traefik.http.services.http-0-n4sgg0gkw0g040cog4os4ck8.loadbalancer.server.port=3001
+      - traefik.http.services.https-0-n4sgg0gkw0g040cog4os4ck8.loadbalancer.server.port=3001
+
+      # V1 API configuration (port 8090)
+      - traefik.http.middlewares.strip-v1.stripprefix.prefixes=/v1
+      - traefik.http.routers.http-v1-api.entryPoints=http
+      - traefik.http.routers.http-v1-api.middlewares=redirect-to-https
+      - traefik.http.routers.http-v1-api.rule=Host(`api.sayitai.com`) && PathPrefix(`/v1`)
+      - traefik.http.routers.http-v1-api.service=v1-api-service
+      - traefik.http.routers.https-v1-api.entryPoints=https
+      - traefik.http.routers.https-v1-api.middlewares=gzip,strip-v1
+      - traefik.http.routers.https-v1-api.rule=Host(`api.sayitai.com`) && PathPrefix(`/v1`)
+      - traefik.http.routers.https-v1-api.service=v1-api-service
+      - traefik.http.routers.https-v1-api.tls.certresolver=letsencrypt
+      - traefik.http.routers.https-v1-api.tls=true
+      - traefik.http.services.v1-api-service.loadbalancer.server.port=8090
+
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8090/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -37,8 +54,6 @@ services:
     networks:
       - coolify
 
-
 networks:
   coolify:
     external: true
-
