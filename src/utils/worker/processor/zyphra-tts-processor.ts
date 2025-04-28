@@ -156,7 +156,7 @@ export class ZyphraTTS {
         ? {
             ...baseParams,
             model: "zonos-v0.1-hybrid",
-            language_iso_code: "ja",
+            // language_iso_code: "ja",
             vqscore: 0.7,
             speaker_noised: true,
             fmax: 20000,
@@ -165,7 +165,7 @@ export class ZyphraTTS {
             ...baseParams,
             model: "zonos-v0.1-transformer",
             emotion: emotion || this.getDefaultEmotions(),
-            pitchStd: 50.0,
+            // pitchStd: 50.0,
           };
 
       const timeoutPromise = new Promise((_, reject) => {
@@ -173,7 +173,7 @@ export class ZyphraTTS {
           () =>
             reject(
               new Error(
-                `TTS request timed out after ${TTS_TIMEOUT_MS / 1000} seconds`
+                `TTS request timed out after ${TTS_TIMEOUT_MS + 60000 / 1000} seconds`
               )
             ),
           TTS_TIMEOUT_MS
