@@ -10,17 +10,21 @@ const worker = new Worker<JobData>(
     const audioProcessor = new AudioProcessor();
     await audioProcessor.init();
 
+    console.log("Processing job:", job.id, job.data);
+
     try {
       let ttsConvertedPaths: string[] = [];
       let totalSteps = 3;
       let completedSteps = 0;
       const startTime = Date.now();
       let stepTimes: number[] = [];
+      let lastStepTime = startTime;
 
       const recordStepTime = () => {
         const currentTime = Date.now();
-        const elapsedTime = currentTime - startTime;
+        const elapsedTime = currentTime - lastStepTime; // Time for the current step
         stepTimes.push(elapsedTime);
+        lastStepTime = currentTime; // Update for the next step
 
         const averageTimePerStep =
           stepTimes.reduce((a, b) => a + b, 0) / stepTimes.length;
@@ -122,7 +126,15 @@ const worker = new Worker<JobData>(
       };
     } catch (error: any) {
       console.error("Job processing error:", error);
-      throw error;
+
+      if (error.code === "ECONNRESET") {
+        console.error("Network error occurred. Retrying...");
+        // Add retry logic here if applicable
+      } else if (error.message.includes("No audio URLs or TTS requests provided")) {
+        console.error("Invalid job data. Skipping job.");
+      }
+
+      throw error; // Rethrow after handling
     } finally {
       await audioProcessor.cleanup();
     }
@@ -147,14 +159,18 @@ const worker = new Worker<JobData>(
 );
 
 function getCurrentStepName(step: number): string {
-  return (
-    [
-      "Processing audio files",
-      "Separating background music",
-      "Combining speech with background",
-      "Finalizing and uploading",
-    ][step] || "Processing"
-  );
+  const stepNames = [
+    "Processing audio files",
+    "Separating background music",
+    "Combining speech with background",
+    "Finalizing and uploading",
+  ];
+
+  if (step < 0 || step >= stepNames.length) {
+    return `Unknown step (${step})`;
+  }
+
+  return stepNames[step];
 }
 
 worker.on("completed", async (job, result) => {
