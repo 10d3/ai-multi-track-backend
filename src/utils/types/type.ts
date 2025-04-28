@@ -64,7 +64,8 @@ export interface Transcript {
   text: string;
   speaker: string
   emotion: any
-  voiceId: string
+  voice?: string
+  // voiceId: string
 }
 
 export interface JobData {

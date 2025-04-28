@@ -28,6 +28,12 @@
 // Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
 generator client {
   provider   = "prisma-client-js"
   engineType = "binary"
@@ -134,13 +140,12 @@ model Transcript {
   speaker            String
   text               String
   textTranslated     String?
-  textTranslatedSSML String?
   voice              String?
-  sentiment          String
-  emotion            Json?
+  // sentiment          String
   start              Int
+  emotion            Json?
   end                Int
-  confidence         Int
+  // confidence         Int
   transcreationId    String // Remove @unique to allow multiple transcripts
   transcreation      Transcreation       @relation(fields: [transcreationId], references: [id], onDelete: Cascade)
   metadataTranscript MetadataTranscript? // One-to-one relation
@@ -149,22 +154,22 @@ model Transcript {
 model MetadataTranscript {
   id                     String                  @id @default(cuid())
   contentType            String[]
-  formalityLevel         String
-  culturalContext        String
-  recommendedPace        String
-  speakerCharacteristics SpeakerCharacteristics?
+  // formalityLevel         String
+  // culturalContext        String
+  // recommendedPace        String
+  // speakerCharacteristics SpeakerCharacteristics?
   transcriptId           String                  @unique // Ensure one metadata per transcript
   transcript             Transcript              @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
 }
 
-model SpeakerCharacteristics {
-  id                 String             @id @default(cuid())
-  age                String?
-  gender             String?
-  accent             String?
-  metadaTranscriptId String             @unique
-  metadataTranscript MetadataTranscript @relation(fields: [metadaTranscriptId], references: [id], onDelete: Cascade)
-}
+// model SpeakerCharacteristics {
+//   id                 String             @id @default(cuid())
+//   age                String?
+//   gender             String?
+//   accent             String?
+//   metadaTranscriptId String             @unique
+//   metadataTranscript MetadataTranscript @relation(fields: [metadaTranscriptId], references: [id], onDelete: Cascade)
+// }
 
 model User {
   id            String          @id @default(cuid())

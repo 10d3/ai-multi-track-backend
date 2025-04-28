@@ -32,9 +32,9 @@ export const formatTranscreationForWorker = async (
       transcript: {
         include: {
           metadataTranscript: {
-            include: {
-              speakerCharacteristics: true,
-            },
+            // include: {
+            //   speakerCharacteristics: true,
+            // },
           },
         },
         orderBy: { start: "asc" }, // Ensure transcripts are ordered by start time
@@ -58,7 +58,8 @@ export const formatTranscreationForWorker = async (
     end: t.end / 1000, // Convert milliseconds to seconds if needed
     text: t.textTranslated || t.text, // Use translated text if available, otherwise original
     speaker: t.speaker,
-    emotion: t.emotion
+    emotion: t.emotion,
+    voice: t.voice || '', // Use voice from transcript if available
   }));
 
   // Get language code for TTS
@@ -74,62 +75,63 @@ export const formatTranscreationForWorker = async (
   // Create TTS requests from transcript data
   const ttsRequests = transcreation.transcript.map((t) => {
     // Format text as SSML for better TTS results
-    const ssmlText = `<speak>${t.textTranslatedSSML || t.textTranslated || t.text}</speak>`;
+    const ssmlText = `${t.textTranslated || t.text}`;
     const emotion = t.emotion
 
     // Get voice information from transcript or use defaults
     let voiceName = t.voice || '';
-    let voiceId = languageCode;
+    let voiceId = t.voice || '';
 
     // If no voice specified, select based on speaker characteristics if available
-    if (!voiceName && t.metadataTranscript?.speakerCharacteristics) {
-      const gender =
-        t.metadataTranscript.speakerCharacteristics.gender?.toLowerCase();
+    if (!voiceName && t.metadataTranscript) {
+      // const gender =
+      //   t.metadataTranscript.speakerCharacteristics.gender?.toLowerCase();
 
       // Filter voices by gender if available
-      let genderVoices = availableVoices;
-      if (gender) {
-        const genderMap: Record<string, string> = {
-          male: "MALE",
-          female: "FEMALE",
-        };
+      // let genderVoices = availableVoices;
+      // if (gender) {
+      //   const genderMap: Record<string, string> = {
+      //     male: "MALE",
+      //     female: "FEMALE",
+      //   };
 
-        const ssmlGender = genderMap[gender];
-        if (ssmlGender) {
-          genderVoices = availableVoices.filter(
-            (v) => v.ssmlGender === ssmlGender
-          );
-        }
-      }
+      //   const ssmlGender = genderMap[gender];
+      //   if (ssmlGender) {
+      //     genderVoices = availableVoices.filter(
+      //       (v) => v.ssmlGender === ssmlGender
+      //     );
+      //   }
+      // }
 
       // Select a voice if available
-      if (genderVoices.length > 0) {
-        // Prefer Neural or Wavenet voices if available
-        const preferredVoice =
-          genderVoices.find(
-            (v) => v.name && (v.name.includes("Neural2") || v.name.includes("Wavenet"))
-          ) || genderVoices[0];
+    //   if (genderVoices.length > 0) {
+    //     // Prefer Neural or Wavenet voices if available
+    //     const preferredVoice =
+    //       genderVoices.find(
+    //         (v) => v.name && (v.name.includes("Neural2") || v.name.includes("Wavenet"))
+    //       ) || genderVoices[0];
 
-        voiceName = preferredVoice.name || '';
-      }
-    }
+    //     voiceName = preferredVoice.name || '';
+    //   }
+    // }
 
-    // If still no voice, use default for language
-    if (!voiceName) {
-      // Default voice mapping based on language
-      const defaultVoices: Record<string, string> = {
-        "en-US": "en-US-Neural2-F",
-        "es-ES": "es-ES-Neural2-A",
-        "fr-FR": "fr-FR-Neural2-A",
-        "de-DE": "de-DE-Neural2-A",
-        // Add more language-to-voice mappings as needed
-      };
+    // // If still no voice, use default for language
+    // if (!voiceName) {
+    //   // Default voice mapping based on language
+    //   const defaultVoices: Record<string, string> = {
+    //     "en-US": "en-US-Neural2-F",
+    //     "es-ES": "es-ES-Neural2-A",
+    //     "fr-FR": "fr-FR-Neural2-A",
+    //     "de-DE": "de-DE-Neural2-A",
+    //     // Add more language-to-voice mappings as needed
+    //   };
 
-      voiceName =
-        defaultVoices[languageCode] ||
-        (availableVoices.length > 0
-          ? (availableVoices[0].name || '')
-          : "en-US-Neural2-F");
+      // voiceName =
+      //   defaultVoices[languageCode] ||
+      //   (availableVoices.length > 0
+      //     ? (availableVoices[0].name || '')
+      //     : "en-US-Neural2-F");
+      voiceName = t.voice ? t.voice : "";
     }
 
     console.log("TTS Request:", {
