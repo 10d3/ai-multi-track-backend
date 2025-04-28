@@ -189,11 +189,22 @@ export class ZyphraTTS {
         throw new Error("No audio content generated");
       }
 
-      const tempAudioPath = await this.fileProcessor.createTempPath(
-        "tts_audio",
-        "mp3"
-      );
-      await fs.writeFile(tempAudioPath, response);
+      // Inspect the response structure
+      console.log("TTS API Response:", response);
+
+      // Extract audio data (adjust based on actual response structure)
+      const audioData = response.audioData || response.data || response; // Replace with the correct property
+
+      if (!audioData) {
+        throw new Error("Audio data not found in the response");
+      }
+
+      // Ensure audioData is a Buffer
+      const audioBuffer = Buffer.isBuffer(audioData) ? audioData : Buffer.from(audioData, "base64");
+
+      // Write the audio data to a temporary file
+      const tempAudioPath = await this.fileProcessor.createTempPath("tts_audio", "mp3");
+      await fs.writeFile(tempAudioPath, audioBuffer);
       await this.fileProcessor.verifyFile(tempAudioPath);
 
       const wavPath = await this.fileProcessor.convertAudioToWav(tempAudioPath);
