@@ -1,11 +1,20 @@
 import { promisify } from "util";
 import { exec } from "child_process";
-import { FileProcessor } from "./file-processor";
-import { AudioAnalyzer } from "./audio-analyzer";
-import { FFMPEG_DEFAULTS, AUDIO_PROCESSING } from "./constants";
+import path from "path";
+import type { FileProcessor } from "./file-processor";
+import type { AudioAnalyzer } from "./audio-analyzer";
 import type { Transcript } from "../../types/type";
+import fs from "fs/promises";
 
 const execAsync = promisify(exec);
+
+// Define audio processing constants
+const AUDIO_PROCESSING = {
+  SPEECH_WEIGHT: 1.0,
+  BG_WEIGHT: 0.3,
+  TARGET_LUFS: -16,
+  MAX_PEAK_DB: -1.5,
+};
 
 export class AudioCombiner {
   private fileProcessor: FileProcessor;
@@ -16,110 +25,227 @@ export class AudioCombiner {
     this.audioAnalyzer = audioAnalyzer;
   }
 
-  async combineAllSpeechWithBackground(
-    speechFiles: string[],
-    backgroundTrack: string,
+  async combineAudioFiles(
+    backgroundPath: string,
+    speechPaths: string[],
     transcript: Transcript[]
   ): Promise<string> {
-    if (!speechFiles?.length) {
-      throw new Error("Speech files array is required and must not be empty");
+    try {
+      if (!backgroundPath || !speechPaths.length) {
+        throw new Error("Missing required audio files for combination");
+      }
+
+      // First analyze the background audio to get its characteristics
+      console.log("Analyzing background audio characteristics...");
+      const bgAnalysis = await this.audioAnalyzer.analyzeAudio(backgroundPath);
+
+      console.log("Background audio analysis:", {
+        duration: bgAnalysis.duration,
+        sampleRate: bgAnalysis.format.sampleRate,
+        channels: bgAnalysis.format.channels,
+        loudness: bgAnalysis.loudness.integrated,
+        truePeak: bgAnalysis.loudness.truePeak,
+      });
+
+      // Clean the background track to improve quality
+      console.log("Cleaning background audio track...");
+      const cleanedBgPath = await this.cleanBackgroundTrack(backgroundPath);
+
+      // Create a temporary directory for the combined audio segments
+      const outputDir = await this.fileProcessor.createTempDir(
+        "combined_segments"
+      );
+
+      // Process each speech segment and position it correctly
+      const segmentPaths: string[] = [];
+
+      for (let i = 0; i < speechPaths.length; i++) {
+        const segment = transcript[i];
+        if (
+          !segment ||
+          segment.start === undefined ||
+          segment.end === undefined
+        ) {
+          console.warn(`Missing transcript data for segment ${i}, skipping`);
+          continue;
+        }
+
+        const segmentPath = await this.createSegmentWithBackground(
+          cleanedBgPath,
+          speechPaths[i],
+          segment.start,
+          segment.end,
+          outputDir,
+          i,
+          bgAnalysis
+        );
+
+        if (segmentPath) {
+          segmentPaths.push(segmentPath);
+        }
+      }
+
+      if (!segmentPaths.length) {
+        throw new Error("No valid segments were created");
+      }
+
+      // Combine all segments into the final audio
+      const finalPath = await this.fileProcessor.createTempPath(
+        "final_audio",
+        "wav"
+      );
+
+      // Create a file list for ffmpeg concat
+      const fileListPath = await this.fileProcessor.createTempPath(
+        "file_list",
+        "txt"
+      );
+      const fileListContent = segmentPaths
+        .map((file) => `file '${file.replace(/'/g, "'\\''")}'`)
+        .join("\n");
+
+      await fs.writeFile(fileListPath, fileListContent);
+
+      // Combine all segments
+      await execAsync(
+        `ffmpeg -f concat -safe 0 -i "${fileListPath}" -c:a pcm_s16le "${finalPath}"`
+      );
+
+      // Apply final audio processing to match original characteristics
+      const processedPath = await this.applyFinalProcessing(
+        finalPath,
+        bgAnalysis
+      );
+
+      return processedPath;
+    } catch (error) {
+      console.error("Error combining audio files:", error);
+      throw error;
     }
-    if (!backgroundTrack) {
-      throw new Error("Background track is required");
-    }
-    if (!transcript?.length || transcript.length !== speechFiles.length) {
-      throw new Error("Transcript array must match speech files length");
-    }
+  }
+
+  private async cleanBackgroundTrack(inputPath: string): Promise<string> {
+    const outputPath = await this.fileProcessor.createTempPath(
+      "cleaned_bg",
+      "wav"
+    );
 
     try {
-      await this.fileProcessor.verifyFile(backgroundTrack);
-      await Promise.all(
-        speechFiles.map((file) => this.fileProcessor.verifyFile(file))
-      );
+      const ffmpegCmd = `ffmpeg -i "${inputPath}" -af "
+        highpass=f=50,
+        lowpass=f=15000,
+        anlmdn=s=7:p=0.002:r=0.002:m=15:b=5,
+        equalizer=f=200:t=q:w=1:g=-2,
+        equalizer=f=1000:t=q:w=1:g=-1,
+        compand=attacks=0.3:points=-70/-90|-24/-12|0/-6|20/-3:gain=3
+      " -y "${outputPath}"`;
 
-      const bgAnalysis = await this.audioAnalyzer.analyzeAudio(backgroundTrack);
-      const bgDuration = bgAnalysis.duration;
+      await execAsync(ffmpegCmd.replace(/\s+/g, " "));
+      await this.fileProcessor.verifyFile(outputPath);
+      return outputPath;
+    } catch (error) {
+      console.error("Background cleaning failed:", error);
+      throw new Error(`Background cleaning failed: ${error}`);
+    }
+  }
 
-      if (bgDuration <= 0) {
-        throw new Error("Invalid background track duration");
+  private async createSegmentWithBackground(
+    backgroundPath: string,
+    speechPath: string,
+    startTime: number,
+    endTime: number,
+    outputDir: string,
+    index: number,
+    bgAnalysis: any
+  ): Promise<string | null> {
+    try {
+      const duration = endTime - startTime;
+      if (duration <= 0) {
+        console.warn(`Invalid duration for segment ${index}: ${duration}s`);
+        return null;
       }
 
-      // Process background track
-      const processedBgPath = await this.fileProcessor.createTempPath(
-        "processed_bg",
-        "wav"
-      );
+      // Extract the background segment for this time range
+      const bgSegmentPath = path.join(outputDir, `bg_segment_${index}.wav`);
       await execAsync(
-        `ffmpeg -i "${backgroundTrack}" -af "volume=${AUDIO_PROCESSING.BG_WEIGHT}" -ar ${FFMPEG_DEFAULTS.SAMPLE_RATE} -ac ${FFMPEG_DEFAULTS.CHANNELS} -y "${processedBgPath}"`
+        `ffmpeg -i "${backgroundPath}" -ss ${startTime} -t ${duration} -c:a pcm_s16le "${bgSegmentPath}"`
       );
 
-      // Process speech files
-      const processedSpeechFiles = await Promise.all(
-        speechFiles.map(async (file, index) => {
-          const outputPath = await this.fileProcessor.createTempPath(
-            `processed_speech_${index}`,
-            "wav"
-          );
-          await execAsync(
-            `ffmpeg -i "${file}" -af "volume=${AUDIO_PROCESSING.SPEECH_WEIGHT}" -ar ${FFMPEG_DEFAULTS.SAMPLE_RATE} -ac ${FFMPEG_DEFAULTS.CHANNELS} -y "${outputPath}"`
-          );
-          return outputPath;
-        })
+      // Analyze the speech segment to match levels appropriately
+      const speechAnalysis = await this.audioAnalyzer.analyzeAudio(speechPath);
+
+      // Create the mixed segment
+      const outputPath = path.join(outputDir, `mixed_segment_${index}.wav`);
+
+      // Use filter_complex to mix the audio with proper volume adjustment based on analysis
+      const speechWeight = AUDIO_PROCESSING.SPEECH_WEIGHT;
+      const bgWeight = AUDIO_PROCESSING.BG_WEIGHT;
+
+      // Calculate volume adjustments based on analysis
+      const speechVolumeAdjust = this.calculateVolumeAdjustment(
+        speechAnalysis.loudness.integrated,
+        AUDIO_PROCESSING.TARGET_LUFS
       );
 
-      // Prepare FFmpeg filter complex command
-      let filterComplex = "";
-      let inputs = `-i "${processedBgPath}" `;
-      let overlays = "";
-
-      const firstStart = transcript[0].start;
-      const lastEnd = transcript[transcript.length - 1].end;
-      const speechDuration = lastEnd - firstStart;
-      const scaleFactor =
-        (bgDuration * AUDIO_PROCESSING.SCALE_FACTOR) / speechDuration;
-
-      // Add input files and create precise delays
-      for (let i = 0; i < transcript.length; i++) {
-        inputs += `-i "${processedSpeechFiles[i]}" `;
-
-        const relativeStart = transcript[i].start - firstStart;
-        const scaledDelay = Math.round(relativeStart * scaleFactor * 1000);
-
-        filterComplex += `[${i + 1}:a]atrim=0,asetpts=PTS-STARTPTS[adj${i}];`;
-        filterComplex += `[adj${i}]adelay=${scaledDelay}|${scaledDelay}[s${i}];`;
-      }
-
-      filterComplex += `[0:a]apad[bg];`;
-      overlays += `[bg]`;
-
-      for (let i = 0; i < transcript.length; i++) {
-        overlays += `[s${i}]`;
-      }
-
-      // Mix with weights
-      const weights = [
-        AUDIO_PROCESSING.BG_WEIGHT,
-        ...Array(transcript.length).fill(AUDIO_PROCESSING.SPEECH_WEIGHT),
-      ].join(" ");
-
-      filterComplex += `${overlays}amix=inputs=${
-        transcript.length + 1
-      }:weights=${weights}[mixed];`;
-      filterComplex += `[mixed]acompressor=threshold=-12dB:ratio=2:attack=200:release=1000[out]`;
-
-      const finalOutputPath = await this.fileProcessor.createTempPath(
-        "final_output",
-        "wav"
+      const bgVolumeAdjust = this.calculateVolumeAdjustment(
+        bgAnalysis.loudness.integrated,
+        AUDIO_PROCESSING.TARGET_LUFS - 10 // Background 10dB quieter than target
       );
-      const ffmpegCmd = `ffmpeg ${inputs} -filter_complex "${filterComplex}" -map "[out]" -c:a pcm_s16le -t ${bgDuration} -y "${finalOutputPath}"`;
+
+      // Mix the audio with proper volume adjustment
+      const ffmpegCmd = `ffmpeg -i "${speechPath}" -i "${bgSegmentPath}" -filter_complex "[0:a]volume=${speechVolumeAdjust}[speech];[1:a]volume=${bgVolumeAdjust}[bg];[speech][bg]amix=inputs=2:weights=${speechWeight} ${bgWeight}:normalize=0[out]" -map "[out]" -c:a pcm_s16le "${outputPath}"`;
 
       await execAsync(ffmpegCmd);
-      await this.fileProcessor.verifyFile(finalOutputPath);
+      await this.fileProcessor.verifyFile(outputPath);
 
-      return finalOutputPath;
+      return outputPath;
     } catch (error) {
-      console.error("Error combining audio:", error);
-      throw error;
+      console.error(`Error creating segment ${index}:`, error);
+      return null;
+    }
+  }
+
+  private calculateVolumeAdjustment(
+    currentLUFS: number,
+    targetLUFS: number
+  ): number {
+    // Calculate volume adjustment factor (in dB)
+    const dbAdjustment = targetLUFS - currentLUFS;
+
+    // Convert dB to amplitude ratio (10^(dB/20))
+    return Math.pow(10, dbAdjustment / 20);
+  }
+
+  private async applyFinalProcessing(
+    inputPath: string,
+    originalAnalysis: any
+  ): Promise<string> {
+    const outputPath = await this.fileProcessor.createTempPath(
+      "processed_final",
+      "wav"
+    );
+
+    try {
+      // Apply loudness normalization and limiting to match original characteristics
+      const ffmpegCmd = `ffmpeg -i "${inputPath}" -af "
+        loudnorm=I=${AUDIO_PROCESSING.TARGET_LUFS}:TP=${
+        AUDIO_PROCESSING.MAX_PEAK_DB
+      }:LRA=${originalAnalysis.loudness.range}:print_format=summary,
+        aresample=${originalAnalysis.format.sampleRate}:resampler=soxr,
+        aformat=channel_layouts=${
+          originalAnalysis.format.channels == 1 ? "mono" : "stereo"
+        }
+      " -ar ${originalAnalysis.format.sampleRate} -ac ${
+        originalAnalysis.format.channels
+      } -c:a pcm_s16le -y "${outputPath}"`;
+
+      await execAsync(ffmpegCmd.replace(/\s+/g, " "));
+      await this.fileProcessor.verifyFile(outputPath);
+
+      return outputPath;
+    } catch (error) {
+      console.error("Final audio processing failed:", error);
+      throw new Error(`Final audio processing failed: ${error}`);
     }
   }
 }
