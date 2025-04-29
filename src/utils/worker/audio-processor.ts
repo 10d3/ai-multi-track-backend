@@ -51,7 +51,10 @@ export class AudioProcessor {
     return convertedPaths;
   }
 
-  async processMultipleTTS(transcript: Transcript[], ttsRequests: TTSRequest[]): Promise<string[]> {
+  async processMultipleTTS(
+    transcript: Transcript[],
+    ttsRequests: TTSRequest[]
+  ): Promise<string[]> {
     // Group requests by speaker to ensure we use the correct reference audio for each speaker
     const mergedData = transcript.map((transcriptItem, index) => {
       const ttsRequest = ttsRequests[index];
@@ -151,9 +154,9 @@ export class AudioProcessor {
     backgroundTrack: string,
     transcript: Transcript[]
   ): Promise<string> {
-    return this.audioCombiner.combineAllSpeechWithBackground(
-      speechFiles,
+    return this.audioCombiner.combineAudioFiles(
       backgroundTrack,
+      speechFiles,
       transcript
     );
   }
