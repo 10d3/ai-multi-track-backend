@@ -69,34 +69,46 @@ export class AudioProcessor {
         requestsBySpeaker[speaker] = [];
       }
 
-      // Convert TTSRequest to ZyphraTTSRequest
+      // Get reference audio for this speaker before creating the request
+      const referenceAudio =
+        await this.speakerReferenceProcessor.getReferenceAudio(speaker);
+
+      // Convert TTSRequest to ZyphraTTSRequest with reference audio
       const zyphraRequest: ZyphraTTSRequest = {
         ...request,
         emotion: request.emotion || undefined,
+        referenceAudioPath: referenceAudio, // Add reference audio path here
       };
+
+      console.log(`[AudioProcessor] Created request for speaker ${speaker}:`, {
+        hasReferenceAudio: !!referenceAudio,
+        isCloning: request.voice_id === "cloning-voice",
+        voiceId: request.voice_id,
+      });
 
       requestsBySpeaker[speaker].push(zyphraRequest);
     }
 
-    // Process each speaker's requests with their reference audio
+    // Process each speaker's requests
     const allResults: string[] = [];
     for (const speaker in requestsBySpeaker) {
       const speakerRequests = requestsBySpeaker[speaker];
-
-      // Get reference audio for this speaker if available
-      const referenceAudio =
-        this.speakerReferenceProcessor.getReferenceAudio(speaker);
-      if (referenceAudio) {
-        // Set reference audio path for all requests from this speaker
-        speakerRequests.forEach((req) => {
-          req.referenceAudioPath = referenceAudio;
-        });
-      }
-
-      const results = await this.zyphraTTS.processZypMultipleTTS(
-        speakerRequests
+      console.log(
+        `[AudioProcessor] Processing ${speakerRequests.length} requests for speaker ${speaker}`
       );
-      allResults.push(...(results as string[]));
+
+      try {
+        const results = await this.zyphraTTS.processZypMultipleTTS(
+          speakerRequests
+        );
+        allResults.push(...results);
+      } catch (error) {
+        console.error(
+          `[AudioProcessor] Error processing requests for speaker ${speaker}:`,
+          error
+        );
+        throw error;
+      }
     }
 
     return allResults;
