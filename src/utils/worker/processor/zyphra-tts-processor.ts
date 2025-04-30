@@ -37,6 +37,7 @@ interface TTSParams {
   vqscore?: number;
   speaker_noised?: boolean;
   fmax?: number;
+  default_voice_name?: string;
 }
 
 export class ZyphraTTS {
@@ -193,35 +194,60 @@ export class ZyphraTTS {
       console.log("[ZyphraTTS] Got Zyphra client successfully");
 
       const isJapanese = voice_id.startsWith("ja");
+      const isCloning = voice_id === "cloning-voice";
       console.log(
         `[ZyphraTTS] Voice is ${isJapanese ? "Japanese" : "non-Japanese"}`
       );
 
-      // Process reference audio if provided
+      // Process reference audio for cloning or if provided
       let speaker_audio: string | undefined;
-      if (referenceAudioPath) {
+      if (isCloning) {
+        if (!referenceAudioPath) {
+          throw new Error("Reference audio is required for voice cloning");
+        }
         try {
           console.log(
-            `[ZyphraTTS] Processing reference audio: ${referenceAudioPath}`
+            `[ZyphraTTS] Processing reference audio for cloning: ${referenceAudioPath}`
           );
-          // Convert the file path to base64 encoded string
           speaker_audio = readFileSync(referenceAudioPath).toString("base64");
           console.log(
             `[ZyphraTTS] Reference audio converted to base64 (length: ${speaker_audio.length})`
           );
         } catch (error) {
-          console.warn("[ZyphraTTS] Failed to read reference audio:", error);
+          console.error(
+            "[ZyphraTTS] Failed to read reference audio for cloning:",
+            error
+          );
+          throw new Error(
+            "Failed to process reference audio for voice cloning"
+          );
         }
-      } else {
-        console.log("[ZyphraTTS] No reference audio provided");
+      } else if (referenceAudioPath) {
+        // Handle non-cloning cases with reference audio
+        try {
+          console.log(
+            `[ZyphraTTS] Processing optional reference audio: ${referenceAudioPath}`
+          );
+          speaker_audio = readFileSync(referenceAudioPath).toString("base64");
+          console.log(
+            `[ZyphraTTS] Optional reference audio converted to base64`
+          );
+        } catch (error) {
+          console.warn(
+            "[ZyphraTTS] Failed to read optional reference audio:",
+            error
+          );
+          // Don't throw error for non-cloning cases
+        }
       }
 
       const baseParams: TTSParams = {
         text: textToSpeech,
         speaking_rate: 15,
         mime_type: "audio/mp3",
-        speaker_audio,
         language_iso_code: language_iso_code || (isJapanese ? "ja" : "en-us"),
+        ...(voice_id !== "cloning-voice" && { default_voice_name: voice_id }),
+        ...(speaker_audio && { speaker_audio }),
       };
 
       console.log("[ZyphraTTS] Base params:", {
@@ -229,10 +255,20 @@ export class ZyphraTTS {
         speaking_rate: baseParams.speaking_rate,
         mime_type: baseParams.mime_type,
         has_speaker_audio: !!baseParams.speaker_audio,
+        default_voice_name: !!baseParams.default_voice_name,
         language_iso_code: baseParams.language_iso_code,
       });
 
-      const params: TTSParams = isJapanese
+      // Set parameters based on voice type
+      const params: TTSParams = isCloning
+        ? {
+            ...baseParams,
+            model: "zonos-v0.1-transformer", // Use appropriate model for cloning
+            speaker_noised: true,
+            emotion: emotion || this.getDefaultEmotions(),
+            vqscore: 0.7,
+          }
+        : isJapanese
         ? {
             ...baseParams,
             model: "zonos-v0.1-hybrid",
@@ -404,7 +440,7 @@ export class ZyphraTTS {
             console.error(`[ZyphraTTS] Error processing request:`, {
               text: request.textToSpeech?.substring(0, 50) + "...",
               voice: request.voice_name,
-              error: error instanceof Error ? error.message : String(error)
+              error: error instanceof Error ? error.message : String(error),
             });
             // Re-throw to be handled by the caller
             throw error;
