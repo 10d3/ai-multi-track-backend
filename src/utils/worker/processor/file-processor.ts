@@ -79,6 +79,10 @@ export class FileProcessor {
     return dirPath;
   }
 
+  async getTempDir(): Promise<string> {
+    return TEMP_DIR;
+  }
+
   async verifyFile(filePath: string): Promise<boolean> {
     try {
       await fs.access(filePath);

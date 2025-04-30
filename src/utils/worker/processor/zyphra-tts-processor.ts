@@ -63,6 +63,52 @@ export class ZyphraTTS {
     };
   }
 
+  /**
+   * Creates a reference audio file on demand from an audio file
+   * @param audioPath Path to the audio file to use as reference
+   * @param speakerId Optional identifier for the speaker
+   * @returns Path to the created reference audio file
+   */
+  public async createReferenceAudio(
+    audioPath: string,
+    speakerId: string = "default"
+  ): Promise<string> {
+    try {
+      console.log(
+        `[ZyphraTTS] Creating reference audio for speaker ${speakerId} from ${audioPath}`
+      );
+
+      // Verify the input file exists
+      await this.fileProcessor.verifyFile(audioPath);
+
+      // Get audio duration
+      const duration = await this.fileProcessor.getAudioDuration(audioPath);
+
+      // Create a reference audio file with optimal duration (10-30 seconds)
+      const targetDuration = Math.min(30, Math.max(10, duration));
+      const startTime =
+        duration > targetDuration ? (duration - targetDuration) / 2 : 0;
+
+      const outputPath = await this.fileProcessor.createTempPath(
+        `reference_${speakerId}`,
+        "wav"
+      );
+
+      // Extract the segment with the best audio quality
+      await execAsync(
+        `ffmpeg -i "${audioPath}" -ss ${startTime} -t ${targetDuration} -af "highpass=f=50,lowpass=f=15000,afftdn=nf=-25" -c:a pcm_s16le "${outputPath}"`
+      );
+
+      await this.fileProcessor.verifyFile(outputPath);
+
+      console.log(`[ZyphraTTS] Created reference audio: ${outputPath}`);
+      return outputPath;
+    } catch (error) {
+      console.error(`[ZyphraTTS] Failed to create reference audio:`, error);
+      throw new Error(`Failed to create reference audio: ${error}`);
+    }
+  }
+
   private async concatenateReferenceAudios(
     primaryAudioPath: string,
     secondaryAudioPath: string = "fallback_reference.wav",

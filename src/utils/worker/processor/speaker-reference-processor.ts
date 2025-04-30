@@ -270,4 +270,111 @@ export class SpeakerReferenceProcessor {
       return vocalsPath; // Fallback to the original vocals
     }
   }
+
+  /**
+   * Creates a reference audio file on demand from an audio file
+   * @param audioPath Path to the audio file to use as reference
+   * @param speakerId Optional identifier for the speaker
+   * @param speakerSegments Optional array of time segments for the specific speaker
+   * @returns Path to the created reference audio file
+   */
+  /**
+   * Creates a reference audio file for a specific speaker by combining their segments
+   * @param audioPath Path to the audio file
+   * @param speakerId Speaker identifier
+   * @param segments Optional array of segments with start/end times
+   * @returns Path to the created reference audio file
+   */
+  public async createReferenceAudio(
+    audioPath: string,
+    speakerId: string = "default",
+    segments?: { start: number; end: number }[]
+  ): Promise<string> {
+    try {
+      console.log(
+        `Creating reference audio for speaker ${speakerId} from ${audioPath}`
+      );
+
+      // Verify the input file exists
+      await this.fileProcessor.verifyFile(audioPath);
+
+      if (segments && segments.length > 0) {
+        // If we have segments, extract and combine them
+        const speakerDir = await this.fileProcessor.createTempDir(
+          `speaker_${speakerId}_ref`
+        );
+        const segmentFiles: string[] = [];
+
+        // Extract each segment
+        for (let i = 0; i < segments.length; i++) {
+          const segment = segments[i];
+          if (!segment.start || !segment.end) continue;
+
+          const duration = segment.end - segment.start;
+          if (duration < 1.0) continue; // Skip very short segments
+
+          const segmentPath = path.join(speakerDir, `segment_${i}.wav`);
+          await execAsync(
+            `ffmpeg -i "${audioPath}" -ss ${segment.start} -t ${duration} -c:a pcm_s16le "${segmentPath}"`
+          );
+
+          try {
+            await this.fileProcessor.verifyFile(segmentPath);
+            segmentFiles.push(segmentPath);
+          } catch (e) {
+            console.warn(`Failed to extract segment ${i}:`, e);
+          }
+        }
+
+        if (segmentFiles.length > 0) {
+          // Combine all segments into a single reference file
+          const outputPath = await this.fileProcessor.createTempPath(
+            `reference_${speakerId}`,
+            "wav"
+          );
+
+          // Create a file list for ffmpeg concat
+          const fileListPath = await this.fileProcessor.createTempPath(
+            "file_list",
+            "txt"
+          );
+          const fileListContent = segmentFiles
+            .map((file) => `file '${file.replace(/'/g, "'\\''")}'`)
+            .join("\n");
+
+          await fs.writeFile(fileListPath, fileListContent);
+
+          // Combine all segments
+          await execAsync(
+            `ffmpeg -f concat -safe 0 -i "${fileListPath}" -c:a pcm_s16le -af "highpass=f=50,lowpass=f=15000,afftdn=nf=-25" "${outputPath}"`
+          );
+
+          await this.fileProcessor.verifyFile(outputPath);
+          return outputPath;
+        }
+      }
+
+      // If no segments or segment extraction failed, extract a portion of the audio
+      const duration = await this.fileProcessor.getAudioDuration(audioPath);
+      const targetDuration = Math.min(30, Math.max(10, duration));
+      const startTime =
+        duration > targetDuration ? (duration - targetDuration) / 2 : 0;
+
+      const outputPath = await this.fileProcessor.createTempPath(
+        `reference_${speakerId}`,
+        "wav"
+      );
+
+      // Extract the segment with the best audio quality
+      await execAsync(
+        `ffmpeg -i "${audioPath}" -ss ${startTime} -t ${targetDuration} -af "highpass=f=50,lowpass=f=15000,afftdn=nf=-25" -c:a pcm_s16le "${outputPath}"`
+      );
+
+      await this.fileProcessor.verifyFile(outputPath);
+      return outputPath;
+    } catch (error) {
+      console.error(`Failed to create reference audio:`, error);
+      throw new Error(`Failed to create reference audio: ${error}`);
+    }
+  }
 }

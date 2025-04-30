@@ -63,30 +63,13 @@ export class AudioProcessor {
 
     const requestsBySpeaker: { [speaker: string]: ZyphraTTSRequest[] } = {};
 
+    // First, organize requests by speaker
     for (const request of mergedData) {
       const speaker = request.speaker || "default";
       if (!requestsBySpeaker[speaker]) {
         requestsBySpeaker[speaker] = [];
       }
-
-      // Get reference audio for this speaker before creating the request
-      const referenceAudio =
-        await this.speakerReferenceProcessor.getReferenceAudio(speaker);
-
-      // Convert TTSRequest to ZyphraTTSRequest with reference audio
-      const zyphraRequest: ZyphraTTSRequest = {
-        ...request,
-        emotion: request.emotion || undefined,
-        referenceAudioPath: referenceAudio, // Add reference audio path here
-      };
-
-      console.log(`[AudioProcessor] Created request for speaker ${speaker}:`, {
-        hasReferenceAudio: !!referenceAudio,
-        isCloning: request.voice_id === "cloning-voice",
-        voiceId: request.voice_id,
-      });
-
-      requestsBySpeaker[speaker].push(zyphraRequest);
+      requestsBySpeaker[speaker].push(request as ZyphraTTSRequest);
     }
 
     // Process each speaker's requests
@@ -95,6 +78,77 @@ export class AudioProcessor {
       const speakerRequests = requestsBySpeaker[speaker];
       console.log(
         `[AudioProcessor] Processing ${speakerRequests.length} requests for speaker ${speaker}`
+      );
+
+      // Get reference audio for this speaker
+      let referenceAudio =
+        this.speakerReferenceProcessor.getReferenceAudio(speaker);
+
+      // Check if any request requires voice cloning but we don't have reference audio
+      const needsCloning = speakerRequests.some(
+        (req) => req.voice_id === "cloning-voice"
+      );
+
+      if (needsCloning && !referenceAudio) {
+        console.log(
+          `[AudioProcessor] Voice cloning requested for speaker ${speaker} but no reference audio found. Creating one on demand.`
+        );
+
+        try {
+          // Get all segments for this speaker from the transcript
+          const speakerSegments = transcript
+            .filter((item) => item.speaker === speaker)
+            .map((item) => ({ start: item.start, end: item.end }));
+
+          // Find a suitable audio file to use as source
+          const tempDir = await this.fileProcessor.getTempDir();
+          const files = await fs.readdir(tempDir);
+          const audioFiles = files.filter(
+            (f) => f.endsWith(".wav") && !f.includes("reference")
+          );
+
+          if (audioFiles.length > 0) {
+            // Use the first available audio file as source
+            const audioPath = path.join(tempDir, audioFiles[0]);
+
+            // Create reference audio on demand
+            referenceAudio =
+              await this.speakerReferenceProcessor.createReferenceAudio(
+                audioPath,
+                speaker,
+                speakerSegments
+              );
+
+            console.log(
+              `[AudioProcessor] Created reference audio on demand for speaker ${speaker}: ${referenceAudio}`
+            );
+          } else {
+            console.warn(
+              `[AudioProcessor] No suitable audio files found to create reference for speaker ${speaker}`
+            );
+          }
+        } catch (error) {
+          console.error(
+            `[AudioProcessor] Failed to create reference audio for speaker ${speaker}:`,
+            error
+          );
+        }
+      }
+
+      // Add reference audio path to each request
+      for (const request of speakerRequests) {
+        request.referenceAudioPath = referenceAudio;
+      }
+
+      console.log(
+        `[AudioProcessor] Prepared requests for speaker ${speaker}:`,
+        {
+          hasReferenceAudio: !!referenceAudio,
+          isCloning: speakerRequests.some(
+            (req) => req.voice_id === "cloning-voice"
+          ),
+          requestCount: speakerRequests.length,
+        }
       );
 
       try {
