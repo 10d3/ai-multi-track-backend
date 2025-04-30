@@ -124,6 +124,28 @@ export class AudioCombiner {
     }
   }
 
+  // private async cleanBackgroundTrack(inputPath: string): Promise<string> {
+  //   const outputPath = await this.fileProcessor.createTempPath(
+  //     "cleaned_bg",
+  //     "wav"
+  //   );
+
+  //   try {
+  //     // Remove extra spaces and use correct filter syntax
+  //     const ffmpegCmd = `ffmpeg -i "${inputPath}" -af highpass=f=50,lowpass=f=15000,afftdn=nf=-25,equalizer=f=200:t=q:w=1:g=-2,equalizer=f=1000:t=q:w=1:g=-1,compand=attacks=0.3:points=-70/-90|-24/-12|0/-6|20/-3:gain=3 -y "${outputPath}"`;
+
+  //     console.log("Executing FFmpeg command:", ffmpegCmd);
+
+  //     await execAsync(ffmpegCmd);
+  //     await this.fileProcessor.verifyFile(outputPath);
+
+  //     return outputPath;
+  //   } catch (error) {
+  //     console.error("Background cleaning failed:", error);
+  //     throw new Error(`Background cleaning failed: ${error}`);
+  //   }
+  // }
+  // Alternative implementation using spawn
   private async cleanBackgroundTrack(inputPath: string): Promise<string> {
     const outputPath = await this.fileProcessor.createTempPath(
       "cleaned_bg",
@@ -131,15 +153,35 @@ export class AudioCombiner {
     );
 
     try {
-      // Remove extra spaces and use correct filter syntax
-      const ffmpegCmd = `ffmpeg -i "${inputPath}" -af highpass=f=50,lowpass=f=15000,afftdn=nf=-25,equalizer=f=200:t=q:w=1:g=-2,equalizer=f=1000:t=q:w=1:g=-1,compand=attacks=0.3:points=-70/-90|-24/-12|0/-6|20/-3:gain=3 -y "${outputPath}"`;
+      const args = [
+        "-i",
+        inputPath,
+        "-af",
+        "highpass=f=50,lowpass=f=15000,afftdn=nf=-25," +
+          "equalizer=f=200:t=q:w=1:g=-2,equalizer=f=1000:t=q:w=1:g=-1," +
+          "compand=attacks=0.3:points=-70/-90|-24/-12|0/-6|20/-3:gain=3",
+        "-y",
+        outputPath,
+      ];
 
-      console.log("Executing FFmpeg command:", ffmpegCmd);
+      const { spawn } = require("child_process");
 
-      await execAsync(ffmpegCmd);
-      await this.fileProcessor.verifyFile(outputPath);
+      return new Promise((resolve, reject) => {
+        const process = spawn("ffmpeg", args);
 
-      return outputPath;
+        process.on("close", async (code: any) => {
+          if (code === 0) {
+            await this.fileProcessor.verifyFile(outputPath);
+            resolve(outputPath);
+          } else {
+            reject(new Error(`FFmpeg process exited with code ${code}`));
+          }
+        });
+
+        process.on("error", (err: any) => {
+          reject(new Error(`Failed to start FFmpeg process: ${err.message}`));
+        });
+      });
     } catch (error) {
       console.error("Background cleaning failed:", error);
       throw new Error(`Background cleaning failed: ${error}`);
