@@ -20,7 +20,7 @@ ENV PYTHONIOENCODING=utf-8
 # Install system dependencies and Python 3.10
 RUN apt-get update && \
     apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev \
-    libssl-dev libreadline-dev libffi-dev curl wget ffmpeg python3-pip python3-venv && \
+    libssl-dev libreadline-dev libffi-dev curl wget python3-pip python3-venv && \
     wget https://www.python.org/ftp/python/3.10.0/Python-3.10.0.tgz && \
     tar -xf Python-3.10.0.tgz && \
     cd Python-3.10.0 && \
@@ -31,6 +31,15 @@ RUN apt-get update && \
     rm -rf Python-3.10.0 Python-3.10.0.tgz && \
     ln -s /usr/local/bin/python3.10 /usr/local/bin/python3 && \
     ln -s /usr/local/bin/pip3.10 /usr/local/bin/pip3 && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install the latest FFmpeg version
+RUN apt-get update && \
+    apt-get install -y software-properties-common && \
+    add-apt-repository ppa:jonathonf/ffmpeg-4 && \
+    apt-get update && \
+    apt-get install -y ffmpeg && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -64,7 +73,7 @@ CMD ["sh", "-c", "bun dev & bun worker & bun websocket"]
 LABEL traefik.enable=true\
     traefik.http.middlewares.gzip.compress=true\
     traefik.http.routers.wss-router.entryPoints=wss\
-    traefik.http.routers.wss-router.rule=Host(`api.sayitai.com`)\
+    traefik.http.routers.wss-router.rule=Host(`api.sayitai.com`)\ 
     traefik.http.routers.wss-router.service=wss-service\
     traefik.http.routers.wss-router.tls=true \
     traefik.http.services.wss-service.loadbalancer.server.port=3001
