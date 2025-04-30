@@ -106,9 +106,9 @@ export class AudioCombiner {
 
       await fs.writeFile(fileListPath, fileListContent);
 
-      // Combine all segments with concat demuxer preserving audio fidelity
+      // Combine all segments
       await execAsync(
-        `ffmpeg -f concat -safe 0 -i "${fileListPath}" -c:a pcm_s16le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} -y "${finalPath}"`
+        `ffmpeg -f concat -safe 0 -i "${fileListPath}" -c:a pcm_s16le "${finalPath}"`
       );
 
       // Apply final audio processing to match original characteristics
@@ -131,16 +131,14 @@ export class AudioCombiner {
     );
 
     try {
-      // Subtle background cleaning that preserves original character while reducing noise
       const ffmpegCmd = `ffmpeg -i "${inputPath}" -af "
-        lowpass=f=16000,
-        highpass=f=40,
-        anlmdn=s=5:p=0.001:r=0.001:m=15:b=5,
-        asplit=2[a][b];
-        [a]aformat=channel_layouts=stereo,highshelf=f=8000:g=-3,lowshelf=f=250:g=-1[a1];
-        [b]aformat=channel_layouts=stereo,highshelf=f=8000:g=-6,lowshelf=f=250:g=-3,volume=0.2[b1];
-        [a1][b1]amix=inputs=2:weights=0.85 0.15
-      " -af aresample=resampler=soxr:precision=24 -c:a pcm_s16le -y "${outputPath}"`;
+        highpass=f=50,
+        lowpass=f=15000,
+        anlmdn=s=7:p=0.002:r=0.002:m=15:b=5,
+        equalizer=f=200:t=q:w=1:g=-2,
+        equalizer=f=1000:t=q:w=1:g=-1,
+        compand=attacks=0.3:points=-70/-90|-24/-12|0/-6|20/-3:gain=3
+      " -y "${outputPath}"`;
 
       await execAsync(ffmpegCmd.replace(/\s+/g, " "));
       await this.fileProcessor.verifyFile(outputPath);
@@ -167,12 +165,10 @@ export class AudioCombiner {
         return null;
       }
 
-      // Extract the background segment for this time range with exact copy settings
+      // Extract the background segment for this time range
       const bgSegmentPath = path.join(outputDir, `bg_segment_${index}.wav`);
-
-      // Extract segment while preserving original audio quality
       await execAsync(
-        `ffmpeg -ss ${startTime} -t ${duration} -i "${backgroundPath}" -c:a pcm_s16le -ar 48000 -y "${bgSegmentPath}"`
+        `ffmpeg -i "${backgroundPath}" -ss ${startTime} -t ${duration} -c:a pcm_s16le "${bgSegmentPath}"`
       );
 
       // Analyze the speech segment to match levels appropriately
@@ -196,16 +192,10 @@ export class AudioCombiner {
         AUDIO_PROCESSING.TARGET_LUFS - 10 // Background 10dB quieter than target
       );
 
-      // Audio mixing that preserves original character while balancing speech and background
-      const ffmpegCmd = `ffmpeg -i "${speechPath}" -i "${bgSegmentPath}" -filter_complex "
-        [0:a]volume=${speechVolumeAdjust},
-          afftdn=nr=0.5:nf=-40[speech];
-        [1:a]volume=${bgVolumeAdjust}[bg];
-        [speech][bg]amix=inputs=2:weights=${speechWeight} ${bgWeight}:normalize=0,
-          afftdn=nr=0.15:nf=-60:tn=0
-      " -map 0:a -c:a pcm_s16le -y "${outputPath}"`;
+      // Mix the audio with proper volume adjustment
+      const ffmpegCmd = `ffmpeg -i "${speechPath}" -i "${bgSegmentPath}" -filter_complex "[0:a]volume=${speechVolumeAdjust}[speech];[1:a]volume=${bgVolumeAdjust}[bg];[speech][bg]amix=inputs=2:weights=${speechWeight} ${bgWeight}:normalize=0[out]" -map "[out]" -c:a pcm_s16le "${outputPath}"`;
 
-      await execAsync(ffmpegCmd.replace(/\s+/g, " "));
+      await execAsync(ffmpegCmd);
       await this.fileProcessor.verifyFile(outputPath);
 
       return outputPath;
@@ -223,8 +213,7 @@ export class AudioCombiner {
     const dbAdjustment = targetLUFS - currentLUFS;
 
     // Convert dB to amplitude ratio (10^(dB/20))
-    // Add a safety cap to prevent extreme volume changes
-    return Math.min(Math.max(Math.pow(10, dbAdjustment / 20), 0.1), 5.0);
+    return Math.pow(10, dbAdjustment / 20);
   }
 
   private async applyFinalProcessing(
@@ -237,31 +226,18 @@ export class AudioCombiner {
     );
 
     try {
-      // Extract exact loudness parameters from original audio
-      const originalLoudness =
-        originalAnalysis.loudness.integrated || AUDIO_PROCESSING.TARGET_LUFS;
-      const originalPeak =
-        originalAnalysis.loudness.truePeak || AUDIO_PROCESSING.MAX_PEAK_DB;
-      const originalLRA = originalAnalysis.loudness.range || 7.0;
-      const originalThreshold = originalAnalysis.loudness.threshold || -25.0;
-
-      // Copy-conform final processing that matches the original audio's character exactly
+      // Apply loudness normalization and limiting to match original characteristics
       const ffmpegCmd = `ffmpeg -i "${inputPath}" -af "
-        loudnorm=I=${originalLoudness}:TP=${originalPeak}:
-          LRA=${originalLRA}:measured_I=${originalLoudness - 0.2}:
-          measured_TP=${originalPeak - 0.2}:
-          measured_LRA=${originalLRA - 0.5}:
-          measured_thresh=${originalThreshold}:linear=true:print_format=summary,
-        aresample=${
-          originalAnalysis.format.sampleRate
-        }:resampler=soxr:dither_method=rectangular,
+        loudnorm=I=${AUDIO_PROCESSING.TARGET_LUFS}:TP=${
+        AUDIO_PROCESSING.MAX_PEAK_DB
+      }:LRA=${originalAnalysis.loudness.range}:print_format=summary,
+        aresample=${originalAnalysis.format.sampleRate}:resampler=soxr,
         aformat=channel_layouts=${
           originalAnalysis.format.channels == 1 ? "mono" : "stereo"
         }
       " -ar ${originalAnalysis.format.sampleRate} -ac ${
         originalAnalysis.format.channels
-      } 
-         -c:a pcm_s16le -y "${outputPath}"`;
+      } -c:a pcm_s16le -y "${outputPath}"`;
 
       await execAsync(ffmpegCmd.replace(/\s+/g, " "));
       await this.fileProcessor.verifyFile(outputPath);
