@@ -222,23 +222,6 @@ export class ZyphraTTS {
             "Failed to process reference audio for voice cloning"
           );
         }
-      } else if (referenceAudioPath) {
-        // Handle non-cloning cases with reference audio
-        try {
-          console.log(
-            `[ZyphraTTS] Processing optional reference audio: ${referenceAudioPath}`
-          );
-          speaker_audio = readFileSync(referenceAudioPath).toString("base64");
-          console.log(
-            `[ZyphraTTS] Optional reference audio converted to base64`
-          );
-        } catch (error) {
-          console.warn(
-            "[ZyphraTTS] Failed to read optional reference audio:",
-            error
-          );
-          // Don't throw error for non-cloning cases
-        }
       }
 
       const baseParams: TTSParams = {
@@ -247,7 +230,7 @@ export class ZyphraTTS {
         mime_type: "audio/mp3",
         language_iso_code: language_iso_code || (isJapanese ? "ja" : "en-us"),
         ...(voice_id !== "cloning-voice" && { default_voice_name: voice_id }),
-        ...(speaker_audio && { speaker_audio }),
+        ...(voice_id === "cloning-voice" && speaker_audio && { speaker_audio }),
       };
 
       console.log("[ZyphraTTS] Base params:", {
