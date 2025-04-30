@@ -274,10 +274,15 @@ export class ZyphraTTS {
         text: textToSpeech,
         speaking_rate: 15,
         mime_type: "audio/mp3",
-        language_iso_code: language_iso_code || (isJapanese ? "ja" : "en-us"),
-        ...(voice_id !== "cloning-voice" && { default_voice_name: voice_id }),
-        ...(voice_id === "cloning-voice" && speaker_audio && { speaker_audio }),
+        language_iso_code: language_iso_code,
       };
+
+      // Add conditional properties based on voice_id
+      if (voice_id !== "cloning-voice") {
+        baseParams.default_voice_name = voice_id;
+      } else if (speaker_audio) {
+        baseParams.speaker_audio = speaker_audio;
+      }
 
       console.log("[ZyphraTTS] Base params:", {
         textLength: baseParams.text.length,
@@ -293,7 +298,7 @@ export class ZyphraTTS {
         ? {
             ...baseParams,
             model: "zonos-v0.1-transformer", // Use appropriate model for cloning
-            speaker_noised: true,
+            // speaker_noised: true,
             emotion: emotion || this.getDefaultEmotions(),
             vqscore: 0.7,
           }
@@ -436,7 +441,8 @@ export class ZyphraTTS {
   }
 
   async processZypMultipleTTS(
-    ttsRequests: ZyphraTTSRequest[]
+    ttsRequests: ZyphraTTSRequest[],
+    language: string
   ): Promise<string[]> {
     console.log(
       `[ZyphraTTS] Processing multiple TTS requests (count: ${
@@ -464,7 +470,10 @@ export class ZyphraTTS {
       const batchResults = await Promise.all(
         batch.map(async (request) => {
           try {
-            return await this.processZypTTS(request);
+            return await this.processZypTTS({
+              ...request,
+              language_iso_code: language || request.language_iso_code,
+            });
           } catch (error) {
             console.error(`[ZyphraTTS] Error processing request:`, {
               text: request.textToSpeech?.substring(0, 50) + "...",

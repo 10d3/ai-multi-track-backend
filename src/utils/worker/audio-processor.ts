@@ -54,12 +54,13 @@ export class AudioProcessor {
   async processMultipleTTS(
     transcript: Transcript[],
     ttsRequests: TTSRequest[],
-    originalAudioUrl?: string // Add parameter for original audio URL
+    originalAudioUrl?: string,
+    language?: string // Add parameter for original audio URL
   ): Promise<string[]> {
     // Group requests by speaker to ensure we use the correct reference audio for each speaker
     const mergedData = transcript.map((transcriptItem, index) => {
       const ttsRequest = ttsRequests[index];
-      return { ...transcriptItem, ...ttsRequest };
+      return { ...transcriptItem, ...ttsRequest, language: language };
     });
 
     const requestsBySpeaker: { [speaker: string]: ZyphraTTSRequest[] } = {};
@@ -211,7 +212,7 @@ export class AudioProcessor {
           // Change voice_id to a default voice instead of cloning
           for (const request of speakerRequests) {
             if (request.voice_id === "cloning-voice") {
-              request.voice_id = "en-US-Neural2-F"; // Use a default voice as fallback
+              request.voice_id = "american-male"; // Use a default voice as fallback
               console.log(
                 `[AudioProcessor] Switched to default voice for speaker ${speaker} due to error`
               );
@@ -251,7 +252,8 @@ export class AudioProcessor {
 
       try {
         const results = await this.zyphraTTS.processZypMultipleTTS(
-          speakerRequests
+          speakerRequests,
+          language as string
         );
         allResults.push(...results);
       } catch (error) {
