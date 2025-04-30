@@ -53,7 +53,8 @@ export class AudioProcessor {
 
   async processMultipleTTS(
     transcript: Transcript[],
-    ttsRequests: TTSRequest[]
+    ttsRequests: TTSRequest[],
+    originalAudioUrl?: string // Add parameter for original audio URL
   ): Promise<string[]> {
     // Group requests by speaker to ensure we use the correct reference audio for each speaker
     const mergedData = transcript.map((transcriptItem, index) => {
@@ -95,32 +96,59 @@ export class AudioProcessor {
         );
 
         try {
-          // Get all segments for this speaker from the transcript
-          const speakerSegments = transcript
-            .filter((item) => item.speaker === speaker)
-            .map((item) => ({ start: item.start, end: item.end }));
-
-          // Find a suitable audio file to use as source
-          const tempDir = await this.fileProcessor.createTempDir("temp_source");
-          const files = await fs.readdir(tempDir);
-          const audioFiles = files.filter(
-            (f) => f.endsWith(".wav") && !f.includes("reference")
+          // Filter transcript to only include segments for this speaker
+          const speakerTranscript = transcript.filter(
+            (item) => item.speaker === speaker
           );
 
-          if (audioFiles.length > 0) {
-            // Use the first available audio file as source
-            const audioPath = path.join(tempDir, audioFiles[0]);
+          let audioPath;
 
+          // Download and use the original audio if URL is provided
+          if (originalAudioUrl) {
+            console.log(
+              `[AudioProcessor] Downloading original audio for reference: ${originalAudioUrl}`
+            );
+            audioPath = await this.fileProcessor.downloadAndConvertAudio(
+              originalAudioUrl
+            );
+            console.log(
+              `[AudioProcessor] Downloaded original audio to: ${audioPath}`
+            );
+          } else {
+            // Fallback to the old method if no original audio URL is provided
+            console.log(
+              `[AudioProcessor] No original audio URL provided, searching for available audio files...`
+            );
+
+            // Find a suitable audio file to use as source
+            const tempDir = await this.fileProcessor.createTempDir(
+              "temp_source"
+            );
+            const files = await fs.readdir(tempDir);
+            const audioFiles = files.filter(
+              (f) => f.endsWith(".wav") && !f.includes("reference")
+            );
+
+            if (audioFiles.length > 0) {
+              // Use the first available audio file as source
+              audioPath = path.join(tempDir, audioFiles[0]);
+              console.log(
+                `[AudioProcessor] Found audio file to use: ${audioPath}`
+              );
+            }
+          }
+
+          if (audioPath) {
             // Create reference audio on demand
-            referenceAudio =
+            referenceAudio = (
               await this.speakerReferenceProcessor.createReferenceAudio(
                 audioPath,
-                speaker,
-                speakerSegments
-              );
+                speakerTranscript
+              )
+            ).get(speaker);
 
             console.log(
-              `[AudioProcessor] Created reference audio on demand for speaker ${speaker}: ${referenceAudio}`
+              `[AudioProcessor] Created reference audio for speaker ${speaker}: ${referenceAudio}`
             );
           } else {
             console.warn(
@@ -141,11 +169,18 @@ export class AudioProcessor {
                 "vocals.wav"
               );
               if (await this.fileProcessor.fileExists(vocalsPath)) {
-                referenceAudio =
+                // Filter transcript to only include segments for this speaker
+                const speakerTranscript = transcript.filter(
+                  (item) => item.speaker === speaker
+                );
+
+                referenceAudio = (
                   await this.speakerReferenceProcessor.createReferenceAudio(
                     vocalsPath,
-                    speaker
-                  );
+                    speakerTranscript
+                  )
+                ).get(speaker);
+
                 console.log(
                   `[AudioProcessor] Created fallback reference audio from vocals: ${referenceAudio}`
                 );

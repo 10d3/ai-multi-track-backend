@@ -33,306 +33,87 @@ export class SpeakerReferenceProcessor {
   }
 
   /**
-   * Extracts speaker reference audio segments from the separated vocals using transcript timestamps
-   * @param vocalsPath Path to the separated vocals audio file
+   * Creates reference audio files for all speakers in the transcript
+   * @param originalAudio Path to the original audio file
    * @param transcript Array of transcript segments with speaker labels and timestamps
+   * @returns Map of speaker IDs to reference audio paths
    */
-  public async extractSpeakerReferences(
-    vocalsPath: string,
+  public async createReferenceAudio(
+    originalAudio: string,
     transcript: Transcript[]
-  ): Promise<void> {
+  ): Promise<Map<string, string>> {
     try {
+      console.log(`Creating reference audio from ${originalAudio}`);
+
+      // Verify the input file exists
+      await this.fileProcessor.verifyFile(originalAudio);
+
       // Group transcript segments by speaker
       const speakerSegments: { [speaker: string]: Transcript[] } = {};
 
-      // Check if we have speaker labels in the transcript
-      const hasMultipleSpeakers =
-        new Set(transcript.map((t) => t.speaker)).size > 1;
+      // Group segments by speaker
+      for (const segment of transcript) {
+        if (!segment.speaker) continue;
 
-      if (hasMultipleSpeakers) {
-        // Group segments by speaker
-        for (const segment of transcript) {
-          if (!segment.speaker) continue;
-
-          if (!speakerSegments[segment.speaker]) {
-            speakerSegments[segment.speaker] = [];
-          }
-          speakerSegments[segment.speaker].push(segment);
+        if (!speakerSegments[segment.speaker]) {
+          speakerSegments[segment.speaker] = [];
         }
-
-        // For each speaker, extract and combine their segments
-        for (const speaker in speakerSegments) {
-          const segments = speakerSegments[speaker];
-          const speakerReferencePath = await this.createSpeakerReference(
-            vocalsPath,
-            segments,
-            speaker
-          );
-
-          if (speakerReferencePath) {
-            this.speakerReferenceAudios.set(speaker, speakerReferencePath);
-            console.log(
-              `Created reference audio for speaker ${speaker}: ${speakerReferencePath}`
-            );
-          }
-        }
-      } else {
-        // If only one speaker or no speaker labels, take a longer segment
-        const singleSpeakerPath = await this.extractSingleSpeakerReference(
-          vocalsPath
-        );
-        const speaker = transcript[0]?.speaker || "default";
-        this.speakerReferenceAudios.set(speaker, singleSpeakerPath);
-        console.log(`Created single speaker reference: ${singleSpeakerPath}`);
-      }
-    } catch (error) {
-      console.error("Failed to extract speaker references:", error);
-    }
-  }
-
-  /**
-   * Creates a reference audio file for a specific speaker by combining their segments
-   */
-  private async createSpeakerReference(
-    vocalsPath: string,
-    segments: Transcript[],
-    speaker: string
-  ): Promise<string | null> {
-    try {
-      // Sort segments by start time
-      segments.sort((a, b) => a.start - b.start);
-
-      // Create a directory for this speaker's segments
-      const speakerDir = await this.fileProcessor.createTempDir(
-        `speaker_${speaker}`
-      );
-      const segmentFiles: string[] = [];
-
-      // Extract each segment
-      for (let i = 0; i < segments.length; i++) {
-        const segment = segments[i];
-        if (segment.start === undefined || segment.end === undefined) continue;
-
-        const duration = segment.end - segment.start;
-        if (duration < 0.5) continue; // Skip very short segments
-
-        const segmentPath = path.join(speakerDir, `segment_${i}.wav`);
-        await execAsync(
-          `ffmpeg -i "${vocalsPath}" -ss ${segment.start} -t ${duration} -c:a pcm_s16le "${segmentPath}"`
-        );
-
-        // Verify the file was created successfully
-        try {
-          await this.fileProcessor.verifyFile(segmentPath);
-          segmentFiles.push(segmentPath);
-        } catch (e) {
-          console.warn(
-            `Failed to extract segment ${i} for speaker ${speaker}:`,
-            e
-          );
-        }
+        speakerSegments[segment.speaker].push(segment);
       }
 
-      if (segmentFiles.length === 0) {
-        console.warn(`No valid segments extracted for speaker ${speaker}`);
-        return null;
-      }
+      // Process each speaker
+      for (const speaker in speakerSegments) {
+        const segments = speakerSegments[speaker];
 
-      // Calculate total duration of extracted segments
-      let totalDuration = 0;
-      for (const file of segmentFiles) {
-        const { stdout } = await execAsync(
-          `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${file}"`
-        );
-        totalDuration += parseFloat(stdout.trim());
-      }
+        // Sort segments by start time
+        segments.sort((a, b) => a.start - b.start);
 
-      // If we have enough audio already (>10 seconds), combine the segments
-      if (totalDuration >= 10) {
-        return this.combineAudioSegments(segmentFiles, speaker);
-      }
-      // If we don't have enough audio, try to extract more by taking longer segments
-      else if (segmentFiles.length > 0) {
-        // Take the longest segments and extend them slightly
-        const extendedSegments: string[] = [];
-
-        for (let i = 0; i < Math.min(3, segments.length); i++) {
-          const segment = segments[i];
-          if (segment.start === undefined || segment.end === undefined)
-            continue;
-
-          // Extend segment by 1 second on each side if possible
-          const extendedStart = Math.max(0, segment.start - 1);
-          const extendedEnd = segment.end + 1;
-          const duration = extendedEnd - extendedStart;
-
-          const extendedPath = path.join(speakerDir, `extended_${i}.wav`);
-          await execAsync(
-            `ffmpeg -i "${vocalsPath}" -ss ${extendedStart} -t ${duration} -c:a pcm_s16le "${extendedPath}"`
-          );
-
-          try {
-            await this.fileProcessor.verifyFile(extendedPath);
-            extendedSegments.push(extendedPath);
-          } catch (e) {
-            console.warn(
-              `Failed to extract extended segment ${i} for speaker ${speaker}:`,
-              e
-            );
-          }
-        }
-
-        if (extendedSegments.length > 0) {
-          return this.combineAudioSegments(extendedSegments, speaker);
-        }
-      }
-
-      // If we still don't have enough audio, use the original vocals as fallback
-      console.warn(
-        `Not enough audio for speaker ${speaker}, using full vocals as fallback`
-      );
-      return vocalsPath;
-    } catch (error) {
-      console.error(
-        `Failed to create reference for speaker ${speaker}:`,
-        error
-      );
-      return null;
-    }
-  }
-
-  /**
-   * Combines multiple audio segments into a single file
-   */
-  private async combineAudioSegments(
-    segmentFiles: string[],
-    speaker: string
-  ): Promise<string> {
-    const outputPath = await this.fileProcessor.createTempPath(
-      `speaker_${speaker}_reference`,
-      "wav"
-    );
-
-    if (segmentFiles.length === 1) {
-      // If only one segment, just copy it
-      await fs.copyFile(segmentFiles[0], outputPath);
-      return outputPath;
-    }
-
-    // Create a file list for ffmpeg
-    const fileListPath = await this.fileProcessor.createTempPath(
-      "file_list",
-      "txt"
-    );
-    const fileListContent = segmentFiles
-      .map((file) => `file '${file.replace(/'/g, "'\\''")}'`)
-      .join("\n");
-    await fs.writeFile(fileListPath, fileListContent);
-
-    // Combine the files
-    await execAsync(
-      `ffmpeg -f concat -safe 0 -i "${fileListPath}" -c:a pcm_s16le "${outputPath}"`
-    );
-
-    await this.fileProcessor.verifyFile(outputPath);
-    return outputPath;
-  }
-
-  /**
-   * Extracts a longer segment from vocals for single speaker reference
-   */
-  private async extractSingleSpeakerReference(
-    vocalsPath: string
-  ): Promise<string> {
-    try {
-      // Get the duration of the vocals file
-      const { stdout } = await execAsync(
-        `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${vocalsPath}"`
-      );
-      const totalDuration = parseFloat(stdout.trim());
-
-      // Take up to 40 seconds from the middle of the file
-      const targetDuration = Math.min(40, totalDuration);
-      const startTime = (totalDuration - targetDuration) / 2; // Start from the middle
-
-      const outputPath = await this.fileProcessor.createTempPath(
-        "single_speaker_reference",
-        "wav"
-      );
-      await execAsync(
-        `ffmpeg -i "${vocalsPath}" -ss ${startTime} -t ${targetDuration} -c:a pcm_s16le "${outputPath}"`
-      );
-
-      await this.fileProcessor.verifyFile(outputPath);
-      return outputPath;
-    } catch (error) {
-      console.error("Failed to extract single speaker reference:", error);
-      return vocalsPath; // Fallback to the original vocals
-    }
-  }
-
-  /**
-   * Creates a reference audio file on demand from an audio file
-   * @param audioPath Path to the audio file to use as reference
-   * @param speakerId Optional identifier for the speaker
-   * @param speakerSegments Optional array of time segments for the specific speaker
-   * @returns Path to the created reference audio file
-   */
-  /**
-   * Creates a reference audio file for a specific speaker by combining their segments
-   * @param audioPath Path to the audio file
-   * @param speakerId Speaker identifier
-   * @param segments Optional array of segments with start/end times
-   * @returns Path to the created reference audio file
-   */
-  public async createReferenceAudio(
-    audioPath: string,
-    speakerId: string = "default",
-    segments?: { start: number; end: number }[]
-  ): Promise<string> {
-    try {
-      console.log(
-        `Creating reference audio for speaker ${speakerId} from ${audioPath}`
-      );
-
-      // Verify the input file exists
-      await this.fileProcessor.verifyFile(audioPath);
-
-      if (segments && segments.length > 0) {
-        // If we have segments, extract and combine them
+        // Create a directory for this speaker's segments
         const speakerDir = await this.fileProcessor.createTempDir(
-          `speaker_${speakerId}_ref`
+          `speaker_${speaker}`
         );
         const segmentFiles: string[] = [];
 
         // Extract each segment
         for (let i = 0; i < segments.length; i++) {
           const segment = segments[i];
-          if (!segment.start || !segment.end) continue;
+          if (segment.start === undefined || segment.end === undefined)
+            continue;
 
           const duration = segment.end - segment.start;
           if (duration < 1.0) continue; // Skip very short segments
 
           const segmentPath = path.join(speakerDir, `segment_${i}.wav`);
           await execAsync(
-            `ffmpeg -i "${audioPath}" -ss ${segment.start} -t ${duration} -c:a pcm_s16le "${segmentPath}"`
+            `ffmpeg -i "${originalAudio}" -ss ${segment.start} -t ${duration} -c:a pcm_s16le "${segmentPath}"`
           );
 
           try {
             await this.fileProcessor.verifyFile(segmentPath);
             segmentFiles.push(segmentPath);
           } catch (e) {
-            console.warn(`Failed to extract segment ${i}:`, e);
+            console.warn(
+              `Failed to extract segment ${i} for speaker ${speaker}:`,
+              e
+            );
           }
         }
 
-        if (segmentFiles.length > 0) {
-          // Combine all segments into a single reference file
-          const outputPath = await this.fileProcessor.createTempPath(
-            `reference_${speakerId}`,
-            "wav"
-          );
+        if (segmentFiles.length === 0) {
+          console.warn(`No valid segments extracted for speaker ${speaker}`);
+          continue;
+        }
 
+        // Combine all segments into a single reference file
+        const outputPath = await this.fileProcessor.createTempPath(
+          `reference_${speaker}`,
+          "wav"
+        );
+
+        if (segmentFiles.length === 1) {
+          // If only one segment, just copy it
+          await fs.copyFile(segmentFiles[0], outputPath);
+        } else {
           // Create a file list for ffmpeg concat
           const fileListPath = await this.fileProcessor.createTempPath(
             "file_list",
@@ -344,37 +125,76 @@ export class SpeakerReferenceProcessor {
 
           await fs.writeFile(fileListPath, fileListContent);
 
-          // Combine all segments
+          // Combine all segments with audio enhancement
           await execAsync(
             `ffmpeg -f concat -safe 0 -i "${fileListPath}" -c:a pcm_s16le -af "highpass=f=50,lowpass=f=15000,afftdn=nf=-25" "${outputPath}"`
           );
-
-          await this.fileProcessor.verifyFile(outputPath);
-          return outputPath;
         }
+
+        await this.fileProcessor.verifyFile(outputPath);
+        this.speakerReferenceAudios.set(speaker, outputPath);
+        console.log(
+          `Created reference audio for speaker ${speaker}: ${outputPath}`
+        );
       }
 
-      // If no segments or segment extraction failed, extract a portion of the audio
+      // If no speakers were processed, create a default reference
+      if (this.speakerReferenceAudios.size === 0) {
+        const defaultPath = await this.createDefaultReference(originalAudio);
+        this.speakerReferenceAudios.set("default", defaultPath);
+      }
+
+      return this.speakerReferenceAudios;
+    } catch (error) {
+      console.error(`Failed to create reference audio:`, error);
+      throw new Error(`Failed to create reference audio: ${error}`);
+    }
+  }
+
+  /**
+   * Creates a default reference audio from the original audio
+   * @param audioPath Path to the audio file
+   * @returns Path to the created reference audio file
+   */
+  private async createDefaultReference(audioPath: string): Promise<string> {
+    try {
+      // Get audio duration
       const duration = await this.fileProcessor.getAudioDuration(audioPath);
+
+      // Create a reference audio file with optimal duration (10-30 seconds)
       const targetDuration = Math.min(30, Math.max(10, duration));
       const startTime =
         duration > targetDuration ? (duration - targetDuration) / 2 : 0;
 
       const outputPath = await this.fileProcessor.createTempPath(
-        `reference_${speakerId}`,
+        "default_reference",
         "wav"
       );
 
-      // Extract the segment with the best audio quality
+      // Extract the middle segment with audio enhancement
       await execAsync(
         `ffmpeg -i "${audioPath}" -ss ${startTime} -t ${targetDuration} -af "highpass=f=50,lowpass=f=15000,afftdn=nf=-25" -c:a pcm_s16le "${outputPath}"`
       );
 
       await this.fileProcessor.verifyFile(outputPath);
+      console.log(`Created default reference audio: ${outputPath}`);
       return outputPath;
     } catch (error) {
-      console.error(`Failed to create reference audio:`, error);
-      throw new Error(`Failed to create reference audio: ${error}`);
+      console.error(`Failed to create default reference:`, error);
+      throw new Error(`Failed to create default reference: ${error}`);
     }
+  }
+
+  /**
+   * Extracts speaker reference audio segments from the separated vocals using transcript timestamps
+   * @param vocalsPath Path to the separated vocals audio file
+   * @param transcript Array of transcript segments with speaker labels and timestamps
+   */
+  public async extractSpeakerReferences(
+    vocalsPath: string,
+    transcript: Transcript[]
+  ): Promise<void> {
+    // Simply call createReferenceAudio with the vocals path
+    await this.createReferenceAudio(vocalsPath, transcript);
   }
 }

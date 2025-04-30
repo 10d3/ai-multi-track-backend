@@ -54,7 +54,8 @@ const worker = new Worker<JobData>(
 
         ttsConvertedPaths = await audioProcessor.processMultipleTTS(
           job.data.transcript,
-          job.data.ttsRequests
+          job.data.ttsRequests,
+          job.data.originalAudioUrl
         );
         totalSteps = job.data.ttsRequests.length + 2;
       } else if (job.data.audioUrls?.length) {
