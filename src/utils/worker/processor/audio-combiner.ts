@@ -131,17 +131,14 @@ export class AudioCombiner {
     );
 
     try {
-      const ffmpegCmd = `ffmpeg -i "${inputPath}" -af "
-        highpass=f=50,
-        lowpass=f=15000,
-        anlmdn=s=7:p=0.002:r=0.002:m=15:b=5,
-        equalizer=f=200:t=q:w=1:g=-2,
-        equalizer=f=1000:t=q:w=1:g=-1,
-        compand=attacks=0.3:points=-70/-90|-24/-12|0/-6|20/-3:gain=3
-      " -y "${outputPath}"`;
+      // Remove extra spaces and use correct filter syntax
+      const ffmpegCmd = `ffmpeg -i "${inputPath}" -af highpass=f=50,lowpass=f=15000,afftdn=nf=-25,equalizer=f=200:t=q:w=1:g=-2,equalizer=f=1000:t=q:w=1:g=-1,compand=attacks=0.3:points=-70/-90|-24/-12|0/-6|20/-3:gain=3 -y "${outputPath}"`;
 
-      await execAsync(ffmpegCmd.replace(/\s+/g, " "));
+      console.log("Executing FFmpeg command:", ffmpegCmd);
+
+      await execAsync(ffmpegCmd);
       await this.fileProcessor.verifyFile(outputPath);
+
       return outputPath;
     } catch (error) {
       console.error("Background cleaning failed:", error);
