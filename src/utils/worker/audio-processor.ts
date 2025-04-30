@@ -82,7 +82,7 @@ export class AudioProcessor {
 
       // Get reference audio for this speaker
       let referenceAudio =
-        this.speakerReferenceProcessor.getReferenceAudio(speaker);
+        await this.speakerReferenceProcessor.getReferenceAudio(speaker);
 
       // Check if any request requires voice cloning but we don't have reference audio
       const needsCloning = speakerRequests.some(
@@ -101,7 +101,7 @@ export class AudioProcessor {
             .map((item) => ({ start: item.start, end: item.end }));
 
           // Find a suitable audio file to use as source
-          const tempDir = await this.fileProcessor.getTempDir();
+          const tempDir = await this.fileProcessor.createTempDir("temp_source");
           const files = await fs.readdir(tempDir);
           const audioFiles = files.filter(
             (f) => f.endsWith(".wav") && !f.includes("reference")
@@ -126,18 +126,81 @@ export class AudioProcessor {
             console.warn(
               `[AudioProcessor] No suitable audio files found to create reference for speaker ${speaker}`
             );
+
+            // FALLBACK: Create a default reference audio if we can't find a suitable source
+            // This is critical to prevent the "Reference audio is required" error
+            const spleeterOutputDir = await this.fileProcessor.createTempDir(
+              "spleeter_output"
+            );
+            const subdirs = await fs.readdir(spleeterOutputDir);
+
+            if (subdirs.length > 0) {
+              const vocalsPath = path.join(
+                spleeterOutputDir,
+                subdirs[0],
+                "vocals.wav"
+              );
+              if (await this.fileProcessor.fileExists(vocalsPath)) {
+                referenceAudio =
+                  await this.speakerReferenceProcessor.createReferenceAudio(
+                    vocalsPath,
+                    speaker
+                  );
+                console.log(
+                  `[AudioProcessor] Created fallback reference audio from vocals: ${referenceAudio}`
+                );
+              }
+            }
+          }
+
+          // If we still don't have reference audio, we need to skip voice cloning
+          if (!referenceAudio && needsCloning) {
+            console.warn(
+              `[AudioProcessor] Could not create reference audio for speaker ${speaker}. Switching to default voice.`
+            );
+            // Change voice_id to a default voice instead of cloning
+            for (const request of speakerRequests) {
+              if (request.voice_id === "cloning-voice") {
+                request.voice_id = "en-US-Neural2-F"; // Use a default voice as fallback
+                console.log(
+                  `[AudioProcessor] Switched to default voice for speaker ${speaker}`
+                );
+              }
+            }
           }
         } catch (error) {
           console.error(
             `[AudioProcessor] Failed to create reference audio for speaker ${speaker}:`,
             error
           );
+          // Change voice_id to a default voice instead of cloning
+          for (const request of speakerRequests) {
+            if (request.voice_id === "cloning-voice") {
+              request.voice_id = "en-US-Neural2-F"; // Use a default voice as fallback
+              console.log(
+                `[AudioProcessor] Switched to default voice for speaker ${speaker} due to error`
+              );
+            }
+          }
         }
       }
 
       // Add reference audio path to each request
       for (const request of speakerRequests) {
-        request.referenceAudioPath = referenceAudio;
+        if (request.voice_id === "cloning-voice") {
+          if (!referenceAudio) {
+            // Final safety check - if we still don't have reference audio, switch to default voice
+            request.voice_id = "en-US-Neural2-F";
+            console.warn(
+              `[AudioProcessor] No reference audio available for cloning. Using default voice.`
+            );
+          } else {
+            request.referenceAudioPath = referenceAudio;
+          }
+        } else {
+          // For non-cloning voices, reference audio is optional
+          request.referenceAudioPath = referenceAudio;
+        }
       }
 
       console.log(

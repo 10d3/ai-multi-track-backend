@@ -100,6 +100,15 @@ export class FileProcessor {
     }
   }
 
+  async fileExists(filePath: string): Promise<boolean> {
+    try {
+      await fs.access(filePath);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
   async convertAudioToWav(inputPath: string): Promise<string> {
     await this.verifyFile(inputPath);
     const outputPath = await this.createTempPath("converted", "wav");
