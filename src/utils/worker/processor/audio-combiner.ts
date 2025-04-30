@@ -255,6 +255,38 @@ export class AudioCombiner {
     return Math.pow(10, dbAdjustment / 20);
   }
 
+  // private async applyFinalProcessing(
+  //   inputPath: string,
+  //   originalAnalysis: any
+  // ): Promise<string> {
+  //   const outputPath = await this.fileProcessor.createTempPath(
+  //     "processed_final",
+  //     "wav"
+  //   );
+
+  //   try {
+  //     // Apply loudness normalization and limiting to match original characteristics
+  //     const ffmpegCmd = `ffmpeg -i "${inputPath}" -af "
+  //       loudnorm=I=${AUDIO_PROCESSING.TARGET_LUFS}:TP=${
+  //       AUDIO_PROCESSING.MAX_PEAK_DB
+  //     }:LRA=${originalAnalysis.loudness.range}:print_format=summary,
+  //       aresample=${originalAnalysis.format.sampleRate}:resampler=soxr,
+  //       aformat=channel_layouts=${
+  //         originalAnalysis.format.channels == 1 ? "mono" : "stereo"
+  //       }
+  //     " -ar ${originalAnalysis.format.sampleRate} -ac ${
+  //       originalAnalysis.format.channels
+  //     } -c:a pcm_s16le -y "${outputPath}"`;
+
+  //     await execAsync(ffmpegCmd.replace(/\s+/g, " "));
+  //     await this.fileProcessor.verifyFile(outputPath);
+
+  //     return outputPath;
+  //   } catch (error) {
+  //     console.error("Final audio processing failed:", error);
+  //     throw new Error(`Final audio processing failed: ${error}`);
+  //   }
+  // }
   private async applyFinalProcessing(
     inputPath: string,
     originalAnalysis: any
@@ -265,20 +297,20 @@ export class AudioCombiner {
     );
 
     try {
-      // Apply loudness normalization and limiting to match original characteristics
-      const ffmpegCmd = `ffmpeg -i "${inputPath}" -af "
-        loudnorm=I=${AUDIO_PROCESSING.TARGET_LUFS}:TP=${
-        AUDIO_PROCESSING.MAX_PEAK_DB
-      }:LRA=${originalAnalysis.loudness.range}:print_format=summary,
-        aresample=${originalAnalysis.format.sampleRate}:resampler=soxr,
-        aformat=channel_layouts=${
+      // Simplified filter chain without soxr resampler
+      const filterChain = [
+        `loudnorm=I=${AUDIO_PROCESSING.TARGET_LUFS}:TP=${AUDIO_PROCESSING.MAX_PEAK_DB}:LRA=${originalAnalysis.loudness.range}:print_format=summary`,
+        `aresample=${originalAnalysis.format.sampleRate}`,
+        `aformat=channel_layouts=${
           originalAnalysis.format.channels == 1 ? "mono" : "stereo"
-        }
-      " -ar ${originalAnalysis.format.sampleRate} -ac ${
-        originalAnalysis.format.channels
-      } -c:a pcm_s16le -y "${outputPath}"`;
+        }`,
+      ].join(",");
 
-      await execAsync(ffmpegCmd.replace(/\s+/g, " "));
+      const ffmpegCmd = `ffmpeg -i "${inputPath}" -af "${filterChain}" -ar ${originalAnalysis.format.sampleRate} -ac ${originalAnalysis.format.channels} -c:a pcm_s16le -y "${outputPath}"`;
+
+      console.log("Executing final processing command:", ffmpegCmd);
+
+      await execAsync(ffmpegCmd);
       await this.fileProcessor.verifyFile(outputPath);
 
       return outputPath;
