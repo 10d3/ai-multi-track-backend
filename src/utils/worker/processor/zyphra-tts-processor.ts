@@ -12,6 +12,41 @@ import { exec } from "child_process";
 import { promisify } from "util";
 // import { env } from "@env";
 
+// Retry configuration for API calls
+const MAX_RETRIES = 3;
+const INITIAL_RETRY_DELAY_MS = 1000; // Start with 1 second delay
+
+// Helper function to determine if an error is retryable
+function isRetryableError(error: any): boolean {
+  // Check for timeout errors
+  if (
+    error.message?.includes("timeout") ||
+    error.message?.includes("timed out")
+  ) {
+    return true;
+  }
+
+  // Check for specific Zyphra error codes
+  if (error.statusCode === 524 || error.response?.status === 524) {
+    return true;
+  }
+
+  // Check for network errors
+  if (
+    error.message?.includes("network") ||
+    error.message?.includes("connection")
+  ) {
+    return true;
+  }
+
+  // Check for server errors (5xx)
+  if (error.statusCode >= 500 || error.response?.status >= 500) {
+    return true;
+  }
+
+  return false;
+}
+
 const execAsync = promisify(exec);
 
 interface EmotionWeights {
@@ -339,12 +374,55 @@ export class ZyphraTTS {
         );
       });
 
-      console.log("[ZyphraTTS] Calling Zyphra API");
-      const response = (await Promise.race([
-        client.audio.speech.create(params),
-        timeoutPromise,
-      ])) as any;
-      console.log("[ZyphraTTS] Received response from Zyphra API");
+      console.log("[ZyphraTTS] Calling Zyphra API with retry mechanism");
+
+      let response: any = null;
+      let lastError: any = null;
+      let retryCount = 0;
+
+      while (retryCount <= MAX_RETRIES) {
+        try {
+          response = (await Promise.race([
+            client.audio.speech.create(params),
+            timeoutPromise,
+          ])) as any;
+
+          console.log("[ZyphraTTS] Received response from Zyphra API");
+          break; // Success, exit the retry loop
+        } catch (error: any) {
+          lastError = error;
+
+          // Check if this is a retryable error
+          const shouldRetry = isRetryableError(error);
+
+          if (shouldRetry && retryCount < MAX_RETRIES) {
+            retryCount++;
+            const delay = INITIAL_RETRY_DELAY_MS * Math.pow(2, retryCount - 1); // Exponential backoff
+            console.log(
+              `[ZyphraTTS] Request timed out (${error.message}). Retrying ${retryCount}/${MAX_RETRIES} after ${delay}ms`
+            );
+
+            // Wait before retrying
+            await new Promise((resolve) => setTimeout(resolve, delay));
+          } else {
+            // Not a timeout or we've exhausted retries
+            console.error(
+              `[ZyphraTTS] API call failed after ${retryCount} retries:`,
+              error
+            );
+            throw error;
+          }
+        }
+      }
+
+      // If we've exhausted retries and still have an error, throw it
+      if (!response && lastError) {
+        console.error(
+          `[ZyphraTTS] API call failed after ${MAX_RETRIES} retries:`,
+          lastError
+        );
+        throw lastError;
+      }
 
       if (!response) {
         console.error("[ZyphraTTS] No response received from API");
@@ -466,29 +544,73 @@ export class ZyphraTTS {
         }/${Math.ceil(ttsRequests.length / BATCH_SIZE)} (size: ${batch.length})`
       );
 
-      // Process each request in the batch with individual error handling
-      const batchResults = await Promise.all(
-        batch.map(async (request) => {
-          try {
-            return await this.processZypTTS({
-              ...request,
-              language_iso_code: language || request.language_iso_code,
-            });
-          } catch (error) {
-            console.error(`[ZyphraTTS] Error processing request:`, {
-              text: request.textToSpeech?.substring(0, 50) + "...",
-              voice: request.voice_name,
-              error: error instanceof Error ? error.message : String(error),
-            });
-            // Re-throw to be handled by the caller
+      let batchRetryCount = 0;
+      let batchSuccess = false;
+      let lastBatchError: any = null;
+
+      // Retry the entire batch if needed
+      while (!batchSuccess && batchRetryCount <= MAX_RETRIES) {
+        try {
+          // Process each request in the batch with individual error handling
+          const batchResults = await Promise.all(
+            batch.map(async (request) => {
+              try {
+                return await this.processZypTTS({
+                  ...request,
+                  language_iso_code: language || request.language_iso_code,
+                });
+              } catch (error) {
+                console.error(`[ZyphraTTS] Error processing request:`, {
+                  text: request.textToSpeech?.substring(0, 50) + "...",
+                  voice: request.voice_name,
+                  error: error instanceof Error ? error.message : String(error),
+                });
+                // Re-throw to be handled by the batch retry mechanism
+                throw error;
+              }
+            })
+          );
+
+          // If we get here, the batch was successful
+          console.log(`[ZyphraTTS] Batch completed successfully`);
+          results.push(...batchResults);
+          batchSuccess = true;
+        } catch (error: any) {
+          lastBatchError = error;
+
+          // Check if this is an error that we should retry
+          const shouldRetry = isRetryableError(error);
+
+          if (shouldRetry && batchRetryCount < MAX_RETRIES) {
+            batchRetryCount++;
+            const delay =
+              INITIAL_RETRY_DELAY_MS * Math.pow(2, batchRetryCount - 1); // Exponential backoff
+            console.log(
+              `[ZyphraTTS] Batch processing failed with timeout error. Retrying batch ${batchRetryCount}/${MAX_RETRIES} after ${delay}ms`
+            );
+
+            // Wait before retrying the batch
+            await new Promise((resolve) => setTimeout(resolve, delay));
+          } else {
+            // Not a timeout or we've exhausted retries
+            console.error(
+              `[ZyphraTTS] Batch processing failed after ${batchRetryCount} retries:`,
+              error
+            );
             throw error;
           }
-        })
-      );
+        }
+      }
 
-      console.log(`[ZyphraTTS] Batch completed successfully`);
+      // If we've exhausted retries and still have an error, throw it
+      if (!batchSuccess && lastBatchError) {
+        console.error(
+          `[ZyphraTTS] Batch processing failed after ${MAX_RETRIES} retries:`,
+          lastBatchError
+        );
+        throw lastBatchError;
+      }
 
-      results.push(...batchResults);
       console.log(
         `[ZyphraTTS] Total results so far: ${results.length}/${ttsRequests.length}`
       );
