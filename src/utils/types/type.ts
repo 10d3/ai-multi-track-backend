@@ -83,6 +83,7 @@ export interface JobData {
     stepTimes: number[];
     lastStepName: string;
   };
+  id: string
 }
 
 export interface AudioAnalysisResult {

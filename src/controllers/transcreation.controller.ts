@@ -158,6 +158,7 @@ export const formatTranscreationForWorker = async (
     userEmail: transcreation.user.email as string,
     email: transcreation.user.email as string, // Add this for compatibility with notifyAPI
     language: transcreation.toLanguage || "en-US", // Add language information
+    id: transcreationId
   };
 
   return jobData;

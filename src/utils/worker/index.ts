@@ -3,6 +3,7 @@ import { notifyAPI } from "../../services/notifyAPi";
 import { redisHost, redisPort, redisUserName, redisPassword } from "../queue";
 import type { JobData } from "../types/type";
 import { AudioProcessor } from "./audio-processor";
+import { updateAudioProcessStatus } from "../../controllers/transcreation.controller";
 
 const worker = new Worker<JobData>(
   "audio-processing",
@@ -56,7 +57,7 @@ const worker = new Worker<JobData>(
           job.data.transcript,
           job.data.ttsRequests,
           job.data.originalAudioUrl,
-          job.data.language,
+          job.data.language
         );
         totalSteps = job.data.ttsRequests.length + 2;
       } else if (job.data.audioUrls?.length) {
@@ -122,6 +123,8 @@ const worker = new Worker<JobData>(
       await job.updateProgress(100);
       recordStepTime();
 
+      await updateAudioProcessStatus(job.data.id, "completed", finalAudioUrl);
+
       return {
         finalAudioUrl,
         processingTime: Date.now() - startTime,
@@ -132,7 +135,9 @@ const worker = new Worker<JobData>(
       if (error.code === "ECONNRESET") {
         console.error("Network error occurred. Retrying...");
         // Add retry logic here if applicable
-      } else if (error.message.includes("No audio URLs or TTS requests provided")) {
+      } else if (
+        error.message.includes("No audio URLs or TTS requests provided")
+      ) {
         console.error("Invalid job data. Skipping job.");
       }
 
