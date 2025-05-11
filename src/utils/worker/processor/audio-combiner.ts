@@ -299,7 +299,6 @@ export class AudioCombiner {
       const targetPeak = AUDIO_PROCESSING.MAX_PEAK_DB;
       
       // Use the original audio's characteristics to guide processing
-      // Remove soxr resampler since it's not available in the current FFmpeg build
       const filterString = `
         loudnorm=I=${targetLufs}:TP=${targetPeak}:LRA=${originalAnalysis.loudness.range}:
         measured_I=${originalAnalysis.loudness.integrated}:
@@ -308,7 +307,9 @@ export class AudioCombiner {
         measured_thresh=${originalAnalysis.loudness.threshold}:
         offset=${originalAnalysis.loudness.offset}:
         linear=true:print_format=summary,
-        aresample=${originalAnalysis.format.sampleRate},
+        aresample=${originalAnalysis.format.sampleRate}:
+        resampler=soxr:precision=28:
+        osf=s${originalAnalysis.format.sampleRate < 48000 ? 16 : 24},
         aformat=channel_layouts=${originalAnalysis.format.channels == 1 ? 'mono' : 'stereo'}
       `;
       
