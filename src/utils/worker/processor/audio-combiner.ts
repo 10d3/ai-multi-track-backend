@@ -5,16 +5,9 @@ import type { FileProcessor } from "./file-processor";
 import type { AudioAnalyzer } from "./audio-analyzer";
 import type { Transcript } from "../../types/type";
 import fs from "fs/promises";
+import { AUDIO_PROCESSING, FFMPEG_FILTERS } from "./constants";
 
 const execAsync = promisify(exec);
-
-// Define audio processing constants
-const AUDIO_PROCESSING = {
-  SPEECH_WEIGHT: 1.0,
-  BG_WEIGHT: 0.3,
-  TARGET_LUFS: -16,
-  MAX_PEAK_DB: -1.5,
-};
 
 export class AudioCombiner {
   private fileProcessor: FileProcessor;
@@ -58,6 +51,7 @@ export class AudioCombiner {
 
       // Process each speech segment and position it correctly
       const segmentPaths: string[] = [];
+      const segmentValidations: any[] = [];
 
       for (let i = 0; i < speechPaths.length; i++) {
         const segment = transcript[i];
@@ -70,6 +64,7 @@ export class AudioCombiner {
           continue;
         }
 
+        // Create segment with precise timing
         const segmentPath = await this.createSegmentWithBackground(
           cleanedBgPath,
           speechPaths[i],
@@ -81,12 +76,39 @@ export class AudioCombiner {
         );
 
         if (segmentPath) {
+          // Validate segment timing
+          const expectedDuration = segment.end - segment.start;
+          const validation = await this.audioAnalyzer.validateSegmentTiming(
+            segmentPath,
+            expectedDuration,
+            0.1 // 100ms tolerance
+          );
+          
+          segmentValidations.push({
+            index: i,
+            start: segment.start,
+            end: segment.end,
+            expectedDuration,
+            actualDuration: validation.actualDuration,
+            difference: validation.difference,
+            isValid: validation.isValid
+          });
+          
           segmentPaths.push(segmentPath);
         }
       }
 
       if (!segmentPaths.length) {
         throw new Error("No valid segments were created");
+      }
+
+      // Log segment validation results
+      console.log("Segment timing validation results:", segmentValidations);
+      
+      // Check if any segments have timing issues
+      const invalidSegments = segmentValidations.filter(v => !v.isValid);
+      if (invalidSegments.length > 0) {
+        console.warn(`${invalidSegments.length} segments have timing issues:`, invalidSegments);
       }
 
       // Combine all segments into the final audio
@@ -116,6 +138,20 @@ export class AudioCombiner {
         finalPath,
         bgAnalysis
       );
+      
+      // Validate final audio against original characteristics
+      const finalValidation = await this.audioAnalyzer.validateFinalAudio(
+        processedPath,
+        bgAnalysis
+      );
+      
+      console.log("Final audio validation results:", finalValidation);
+      
+      // If validation fails but audio is still usable, log warning but continue
+      if (!finalValidation.isValid) {
+        console.warn("Final audio does not perfectly match original characteristics:", 
+          finalValidation.details);
+      }
 
       return processedPath;
     } catch (error) {
@@ -124,28 +160,6 @@ export class AudioCombiner {
     }
   }
 
-  // private async cleanBackgroundTrack(inputPath: string): Promise<string> {
-  //   const outputPath = await this.fileProcessor.createTempPath(
-  //     "cleaned_bg",
-  //     "wav"
-  //   );
-
-  //   try {
-  //     // Remove extra spaces and use correct filter syntax
-  //     const ffmpegCmd = `ffmpeg -i "${inputPath}" -af highpass=f=50,lowpass=f=15000,afftdn=nf=-25,equalizer=f=200:t=q:w=1:g=-2,equalizer=f=1000:t=q:w=1:g=-1,compand=attacks=0.3:points=-70/-90|-24/-12|0/-6|20/-3:gain=3 -y "${outputPath}"`;
-
-  //     console.log("Executing FFmpeg command:", ffmpegCmd);
-
-  //     await execAsync(ffmpegCmd);
-  //     await this.fileProcessor.verifyFile(outputPath);
-
-  //     return outputPath;
-  //   } catch (error) {
-  //     console.error("Background cleaning failed:", error);
-  //     throw new Error(`Background cleaning failed: ${error}`);
-  //   }
-  // }
-  // Alternative implementation using spawn
   private async cleanBackgroundTrack(inputPath: string): Promise<string> {
     const outputPath = await this.fileProcessor.createTempPath(
       "cleaned_bg",
@@ -157,9 +171,7 @@ export class AudioCombiner {
         "-i",
         inputPath,
         "-af",
-        "highpass=f=50,lowpass=f=15000,afftdn=nf=-25," +
-          "equalizer=f=200:t=q:w=1:g=-2,equalizer=f=1000:t=q:w=1:g=-1," +
-          "compand=attacks=0.3:points=-70/-90|-24/-12|0/-6|20/-3:gain=3",
+        FFMPEG_FILTERS.BACKGROUND_CLEANING,
         "-y",
         outputPath,
       ];
@@ -203,120 +215,138 @@ export class AudioCombiner {
         console.warn(`Invalid duration for segment ${index}: ${duration}s`);
         return null;
       }
+      
+      // Add a small padding to ensure we don't cut off speech
+      const paddingMs = AUDIO_PROCESSING.SEGMENT_PADDING_MS;
+      const paddingSec = paddingMs / 1000;
+      
+      // Calculate precise timing with padding
+      const extractStart = Math.max(0, startTime - paddingSec);
+      const extractDuration = duration + (paddingSec * 2);
+      
+      console.log(`Creating segment ${index} with precise timing:`, {
+        originalStart: startTime,
+        originalEnd: endTime,
+        originalDuration: duration,
+        extractStart,
+        extractDuration,
+        paddingMs
+      });
 
       // Extract the background segment for this time range
       const bgSegmentPath = path.join(outputDir, `bg_segment_${index}.wav`);
       await execAsync(
-        `ffmpeg -i "${backgroundPath}" -ss ${startTime} -t ${duration} -c:a pcm_s16le "${bgSegmentPath}"`
+        `ffmpeg -i "${backgroundPath}" -ss ${extractStart} -t ${extractDuration} -c:a pcm_s16le "${bgSegmentPath}"`
       );
 
-      // Analyze the speech segment to match levels appropriately
+      // Analyze speech file to get its characteristics
       const speechAnalysis = await this.audioAnalyzer.analyzeAudio(speechPath);
+      
+      // Verify speech file duration is close to expected duration
+      const speechDuration = speechAnalysis.duration;
+      const durationDiff = Math.abs(speechDuration - duration);
+      
+      if (durationDiff > 0.5) { // More than 500ms difference
+        console.warn(`Speech segment ${index} duration (${speechDuration}s) differs significantly from transcript timing (${duration}s)`);
+      }
 
-      // Create the mixed segment
-      const outputPath = path.join(outputDir, `mixed_segment_${index}.wav`);
-
-      // Use filter_complex to mix the audio with proper volume adjustment based on analysis
-      const speechWeight = AUDIO_PROCESSING.SPEECH_WEIGHT;
-      const bgWeight = AUDIO_PROCESSING.BG_WEIGHT;
-
-      // Calculate volume adjustments based on analysis
-      const speechVolumeAdjust = this.calculateVolumeAdjustment(
-        speechAnalysis.loudness.integrated,
-        AUDIO_PROCESSING.TARGET_LUFS
+      // Process speech to enhance clarity
+      const processedSpeechPath = path.join(outputDir, `speech_processed_${index}.wav`);
+      await execAsync(
+        `ffmpeg -i "${speechPath}" -af "${FFMPEG_FILTERS.SPEECH_ENHANCEMENT}" -c:a pcm_s16le "${processedSpeechPath}"`
       );
 
-      const bgVolumeAdjust = this.calculateVolumeAdjustment(
-        bgAnalysis.loudness.integrated,
-        AUDIO_PROCESSING.TARGET_LUFS - 10 // Background 10dB quieter than target
+      // Mix background and speech with precise volume control
+      const outputPath = path.join(outputDir, `combined_segment_${index}.wav`);
+      
+      // Use filter complex for precise mixing with crossfade
+      const filterComplex = `
+        [0:a]volume=${AUDIO_PROCESSING.BG_WEIGHT}[bg];
+        [1:a]volume=${AUDIO_PROCESSING.SPEECH_WEIGHT}[speech];
+        [bg][speech]amix=inputs=2:duration=longest,dynaudnorm[out]
+      `;
+      
+      await execAsync(
+        `ffmpeg -i "${bgSegmentPath}" -i "${processedSpeechPath}" -filter_complex "${filterComplex.replace(/\s+/g, ' ')}" -map "[out]" -c:a pcm_s16le "${outputPath}"`
       );
 
-      // Mix the audio with proper volume adjustment
-      const ffmpegCmd = `ffmpeg -i "${speechPath}" -i "${bgSegmentPath}" -filter_complex "[0:a]volume=${speechVolumeAdjust}[speech];[1:a]volume=${bgVolumeAdjust}[bg];[speech][bg]amix=inputs=2:weights=${speechWeight} ${bgWeight}:normalize=0[out]" -map "[out]" -c:a pcm_s16le "${outputPath}"`;
-
-      await execAsync(ffmpegCmd);
+      // Verify the output file
       await this.fileProcessor.verifyFile(outputPath);
-
+      
+      // Validate segment timing
+      const segmentAnalysis = await this.audioAnalyzer.analyzeAudio(outputPath);
+      console.log(`Segment ${index} created with duration ${segmentAnalysis.duration}s (expected ~${extractDuration}s)`);
+      
       return outputPath;
     } catch (error) {
       console.error(`Error creating segment ${index}:`, error);
-      return null;
+      throw new Error(`Failed to create segment ${index}: ${error}`);
     }
   }
 
-  private calculateVolumeAdjustment(
-    currentLUFS: number,
-    targetLUFS: number
-  ): number {
-    // Calculate volume adjustment factor (in dB)
-    const dbAdjustment = targetLUFS - currentLUFS;
-
-    // Convert dB to amplitude ratio (10^(dB/20))
-    return Math.pow(10, dbAdjustment / 20);
-  }
-
-  // private async applyFinalProcessing(
-  //   inputPath: string,
-  //   originalAnalysis: any
-  // ): Promise<string> {
-  //   const outputPath = await this.fileProcessor.createTempPath(
-  //     "processed_final",
-  //     "wav"
-  //   );
-
-  //   try {
-  //     // Apply loudness normalization and limiting to match original characteristics
-  //     const ffmpegCmd = `ffmpeg -i "${inputPath}" -af "
-  //       loudnorm=I=${AUDIO_PROCESSING.TARGET_LUFS}:TP=${
-  //       AUDIO_PROCESSING.MAX_PEAK_DB
-  //     }:LRA=${originalAnalysis.loudness.range}:print_format=summary,
-  //       aresample=${originalAnalysis.format.sampleRate}:resampler=soxr,
-  //       aformat=channel_layouts=${
-  //         originalAnalysis.format.channels == 1 ? "mono" : "stereo"
-  //       }
-  //     " -ar ${originalAnalysis.format.sampleRate} -ac ${
-  //       originalAnalysis.format.channels
-  //     } -c:a pcm_s16le -y "${outputPath}"`;
-
-  //     await execAsync(ffmpegCmd.replace(/\s+/g, " "));
-  //     await this.fileProcessor.verifyFile(outputPath);
-
-  //     return outputPath;
-  //   } catch (error) {
-  //     console.error("Final audio processing failed:", error);
-  //     throw new Error(`Final audio processing failed: ${error}`);
-  //   }
-  // }
   private async applyFinalProcessing(
     inputPath: string,
     originalAnalysis: any
   ): Promise<string> {
-    const outputPath = await this.fileProcessor.createTempPath(
-      "processed_final",
-      "wav"
-    );
-
     try {
-      // Simplified filter chain without soxr resampler
-      const filterChain = [
-        `loudnorm=I=${AUDIO_PROCESSING.TARGET_LUFS}:TP=${AUDIO_PROCESSING.MAX_PEAK_DB}:LRA=${originalAnalysis.loudness.range}:print_format=summary`,
-        `aresample=${originalAnalysis.format.sampleRate}`,
-        `aformat=channel_layouts=${
-          originalAnalysis.format.channels == 1 ? "mono" : "stereo"
-        }`,
-      ].join(",");
+      const outputPath = await this.fileProcessor.createTempPath(
+        "processed_final",
+        "wav"
+      );
 
-      const ffmpegCmd = `ffmpeg -i "${inputPath}" -af "${filterChain}" -ar ${originalAnalysis.format.sampleRate} -ac ${originalAnalysis.format.channels} -c:a pcm_s16le -y "${outputPath}"`;
-
-      console.log("Executing final processing command:", ffmpegCmd);
-
-      await execAsync(ffmpegCmd);
+      // Create a filter string that matches the original audio characteristics
+      const targetLufs = AUDIO_PROCESSING.TARGET_LUFS;
+      const targetPeak = AUDIO_PROCESSING.MAX_PEAK_DB;
+      
+      // Use the original audio's characteristics to guide processing
+      const filterString = `
+        loudnorm=I=${targetLufs}:TP=${targetPeak}:LRA=${originalAnalysis.loudness.range}:
+        measured_I=${originalAnalysis.loudness.integrated}:
+        measured_TP=${originalAnalysis.loudness.truePeak}:
+        measured_LRA=${originalAnalysis.loudness.range}:
+        measured_thresh=${originalAnalysis.loudness.threshold}:
+        offset=${originalAnalysis.loudness.offset}:
+        linear=true:print_format=summary,
+        aresample=${originalAnalysis.format.sampleRate}:
+        resampler=soxr:precision=28:
+        osf=s${originalAnalysis.format.sampleRate < 48000 ? 16 : 24},
+        aformat=channel_layouts=${originalAnalysis.format.channels == 1 ? 'mono' : 'stereo'}
+      `;
+      
+      // Apply the processing
+      await execAsync(
+        `ffmpeg -i "${inputPath}" -af "${filterString.replace(/\s+/g, ' ')}" -c:a pcm_s16le -y "${outputPath}"`
+      );
+      
+      // Verify the output file
       await this.fileProcessor.verifyFile(outputPath);
-
+      
+      // Analyze the processed file to confirm it matches target characteristics
+      const processedAnalysis = await this.audioAnalyzer.analyzeAudio(outputPath);
+      
+      console.log("Final audio processing results:", {
+        original: {
+          loudness: originalAnalysis.loudness.integrated,
+          peak: originalAnalysis.loudness.truePeak,
+          sampleRate: originalAnalysis.format.sampleRate,
+          channels: originalAnalysis.format.channels
+        },
+        processed: {
+          loudness: processedAnalysis.loudness.integrated,
+          peak: processedAnalysis.loudness.truePeak,
+          sampleRate: processedAnalysis.format.sampleRate,
+          channels: processedAnalysis.format.channels
+        },
+        target: {
+          loudness: targetLufs,
+          peak: targetPeak
+        }
+      });
+      
       return outputPath;
     } catch (error) {
-      console.error("Final audio processing failed:", error);
-      throw new Error(`Final audio processing failed: ${error}`);
+      console.error("Error applying final processing:", error);
+      throw new Error(`Final processing failed: ${error}`);
     }
   }
 }
