@@ -188,3 +188,6 @@ env
 pretrained_models
 
 .conda
+
+.trae
+.gitignore
