@@ -131,9 +131,9 @@ export class AudioCombiner {
 
       await fs.writeFile(fileListPath, fileListContent);
 
-      // Combine all segments with higher quality
+      // Combine all segments with limited thread usage
       await execAsync(
-        `ffmpeg -threads 0 -f concat -safe 0 -i "${fileListPath}" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${finalPath}"`
+        `ffmpeg -threads 2 -f concat -safe 0 -i "${fileListPath}" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${finalPath}"`
       );
 
       // Apply final audio processing to match original characteristics
@@ -172,11 +172,11 @@ export class AudioCombiner {
     );
   
     try {
-      // Use a gentler filter for background cleaning that preserves more original characteristics
-      const cleaningFilter = "afftdn=nf=-25:nt=w,dynaudnorm=p=0.99:m=20:s=15:g=5";
+      // Use a simpler filter for background cleaning with less processing
+      const cleaningFilter = "dynaudnorm=p=0.95:m=10:s=10:g=5";
       
       await execAsync(
-        `ffmpeg -threads 0 -i "${inputPath}" -af "${cleaningFilter}" -c:a pcm_s24le "${outputPath}"`
+        `ffmpeg -threads 2 -i "${inputPath}" -af "${cleaningFilter}" -c:a pcm_s24le "${outputPath}"`
       );
       
       await this.fileProcessor.verifyFile(outputPath);
@@ -223,45 +223,22 @@ export class AudioCombiner {
       // Extract the background segment for this time range with higher quality
       const bgSegmentPath = path.join(outputDir, `bg_segment_${index}.wav`);
       await execAsync(
-        `ffmpeg -threads 0 -i "${backgroundPath}" -ss ${extractStart} -t ${extractDuration} -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${bgSegmentPath}"`
+        `ffmpeg -threads 2 -i "${backgroundPath}" -ss ${extractStart} -t ${extractDuration} -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${bgSegmentPath}"`
       );
 
-      // Analyze speech file to get its characteristics
-      const speechAnalysis = await this.audioAnalyzer.analyzeAudio(speechPath);
-
-      // Verify speech file duration is close to expected duration
-      const speechDuration = speechAnalysis.duration;
-      const durationDiff = Math.abs(speechDuration - duration);
-
-      if (durationDiff > 0.5) {
-        // More than 500ms difference
-        console.warn(
-          `Speech segment ${index} duration (${speechDuration}s) differs significantly from transcript timing (${duration}s)`
-        );
-      }
-
-      // Process speech to enhance clarity with minimal processing
-      const processedSpeechPath = path.join(
-        outputDir,
-        `speech_processed_${index}.wav`
-      );
-      await execAsync(
-        `ffmpeg -threads 0 -i "${speechPath}" -af "highpass=f=80,afftdn=nf=-20:nt=w" -c:a pcm_s24le -ar ${speechAnalysis.format.sampleRate} "${processedSpeechPath}"`
-      );
-
-      // Mix background and speech with improved filter complex
+      // Skip detailed speech analysis and directly mix with background
+      // Mix background and speech with simplified approach
       const outputPath = path.join(outputDir, `combined_segment_${index}.wav`);
 
-      // Improved filter complex for better mixing with minimal processing
+      // Simplified filter complex for basic mixing without heavy processing
       const filterComplex = `
-        [0:a]aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${bgAnalysis.format.channels == 1 ? "mono" : "stereo"},volume=${AUDIO_PROCESSING.BG_WEIGHT},apad[bg];
+        [0:a]aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${bgAnalysis.format.channels == 1 ? "mono" : "stereo"},volume=${AUDIO_PROCESSING.BG_WEIGHT}[bg];
         [1:a]aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${bgAnalysis.format.channels == 1 ? "mono" : "stereo"},volume=${AUDIO_PROCESSING.SPEECH_WEIGHT}[speech];
-        [bg][speech]amix=inputs=2:duration=longest:weights=${AUDIO_PROCESSING.BG_WEIGHT} ${AUDIO_PROCESSING.SPEECH_WEIGHT}[mixed];
-        [mixed]dynaudnorm=p=0.98:m=15:s=10:g=3[out]
+        [bg][speech]amix=inputs=2:duration=longest:weights=${AUDIO_PROCESSING.BG_WEIGHT} ${AUDIO_PROCESSING.SPEECH_WEIGHT}[out]
       `;
 
       await execAsync(
-        `ffmpeg -threads 0 -i "${bgSegmentPath}" -i "${processedSpeechPath}" -filter_complex "${filterComplex.replace(
+        `ffmpeg -threads 2 -i "${bgSegmentPath}" -i "${speechPath}" -filter_complex "${filterComplex.replace(
           /\s+/g,
           " "
         )}" -map "[out]" -c:a pcm_s24le "${outputPath}"`
@@ -270,11 +247,8 @@ export class AudioCombiner {
       // Verify the output file
       await this.fileProcessor.verifyFile(outputPath);
 
-      // Validate segment timing
-      const segmentAnalysis = await this.audioAnalyzer.analyzeAudio(outputPath);
-      console.log(
-        `Segment ${index} created with duration ${segmentAnalysis.duration}s (expected ~${extractDuration}s)`
-      );
+      // Log segment creation without detailed analysis
+      console.log(`Segment ${index} created successfully`);
 
       return outputPath;
     } catch (error) {
@@ -297,81 +271,21 @@ export class AudioCombiner {
       const targetLufs = originalAnalysis.loudness.integrated; // Use original loudness instead of target
       const targetPeak = Math.min(-0.5, originalAnalysis.loudness.truePeak); // Preserve original peak but avoid clipping
 
-      // Simplified filter string that focuses on matching original characteristics
-      // without excessive processing that might degrade quality
-      const filterString = `
-        aformat=sample_fmts=fltp:sample_rates=${originalAnalysis.format.sampleRate}:channel_layouts=${originalAnalysis.format.channels == 1 ? "mono" : "stereo"},
-        loudnorm=I=${targetLufs}:TP=${targetPeak}:LRA=${originalAnalysis.loudness.range}:linear=true:print_format=summary,
-        aresample=${originalAnalysis.format.sampleRate}:resampler=soxr:precision=28
-      `;
+      // Simplified filter string with minimal processing
+      const filterString = `aformat=sample_fmts=fltp:sample_rates=${originalAnalysis.format.sampleRate}:channel_layouts=${originalAnalysis.format.channels == 1 ? "mono" : "stereo"},loudnorm=I=${targetLufs}:TP=${targetPeak}:print_format=summary`;
 
-      // Apply the processing with higher quality settings
-      // Use a default bit depth since the property might not exist
+      // Apply the processing with limited thread usage
       const codecParam = "pcm_s24le"; // Default to 24-bit audio for better quality
 
       await execAsync(
-        `ffmpeg -threads 0 -i "${inputPath}" -af "${filterString.replace(
-          /\s+/g,
-          " "
-        )}" -c:a ${codecParam} -ar ${
-          originalAnalysis.format.sampleRate
-        } -y "${outputPath}"`
+        `ffmpeg -threads 2 -i "${inputPath}" -af "${filterString}" -c:a ${codecParam} -ar ${originalAnalysis.format.sampleRate} -ac ${originalAnalysis.format.channels} -y "${outputPath}"`
       );
 
       // Verify the output file
       await this.fileProcessor.verifyFile(outputPath);
-
-      // Analyze the processed file to confirm it matches target characteristics
-      const processedAnalysis = await this.audioAnalyzer.analyzeAudio(
-        outputPath
-      );
-
-      console.log("Final audio processing results:", {
-        original: {
-          loudness: originalAnalysis.loudness.integrated,
-          peak: originalAnalysis.loudness.truePeak,
-          sampleRate: originalAnalysis.format.sampleRate,
-          channels: originalAnalysis.format.channels,
-          codec: originalAnalysis.format.codec || "unknown",
-        },
-        processed: {
-          loudness: processedAnalysis.loudness.integrated,
-          peak: processedAnalysis.loudness.truePeak,
-          sampleRate: processedAnalysis.format.sampleRate,
-          channels: processedAnalysis.format.channels,
-          codec: processedAnalysis.format.codec || "unknown",
-        },
-        target: {
-          loudness: targetLufs,
-          peak: targetPeak,
-        },
-      });
-
-      // If the processed audio doesn't match the original closely enough,
-      // try a simpler approach with minimal processing
-      const loudnessDiff = Math.abs(
-        processedAnalysis.loudness.integrated -
-          originalAnalysis.loudness.integrated
-      );
-      if (loudnessDiff > 2.0) {
-        console.warn(
-          "Processed audio doesn't match original characteristics closely. Trying simpler approach..."
-        );
-
-        const simpleOutputPath = await this.fileProcessor.createTempPath(
-          "simple_processed_final",
-          "wav"
-        );
-
-        // Just copy the format characteristics with minimal processing
-        await execAsync(
-          `ffmpeg -threads 0 -i "${inputPath}" -af "aformat=sample_fmts=fltp:sample_rates=${originalAnalysis.format.sampleRate}:channel_layouts=${originalAnalysis.format.channels == 1 ? "mono" : "stereo"},loudnorm=I=${targetLufs}:TP=${targetPeak}:print_format=summary" -c:a ${codecParam} -ar ${originalAnalysis.format.sampleRate} -ac ${originalAnalysis.format.channels} -y "${simpleOutputPath}"`
-        );
-
-        await this.fileProcessor.verifyFile(simpleOutputPath);
-        return simpleOutputPath;
-      }
-
+      
+      console.log("Final audio processing completed");
+      
       return outputPath;
     } catch (error) {
       console.error("Error applying final processing:", error);
