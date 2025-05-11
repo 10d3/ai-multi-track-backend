@@ -83,7 +83,7 @@ export class AudioCombiner {
             expectedDuration,
             0.1 // 100ms tolerance
           );
-          
+
           segmentValidations.push({
             index: i,
             start: segment.start,
@@ -91,9 +91,9 @@ export class AudioCombiner {
             expectedDuration,
             actualDuration: validation.actualDuration,
             difference: validation.difference,
-            isValid: validation.isValid
+            isValid: validation.isValid,
           });
-          
+
           segmentPaths.push(segmentPath);
         }
       }
@@ -104,11 +104,14 @@ export class AudioCombiner {
 
       // Log segment validation results
       console.log("Segment timing validation results:", segmentValidations);
-      
+
       // Check if any segments have timing issues
-      const invalidSegments = segmentValidations.filter(v => !v.isValid);
+      const invalidSegments = segmentValidations.filter((v) => !v.isValid);
       if (invalidSegments.length > 0) {
-        console.warn(`${invalidSegments.length} segments have timing issues:`, invalidSegments);
+        console.warn(
+          `${invalidSegments.length} segments have timing issues:`,
+          invalidSegments
+        );
       }
 
       // Combine all segments into the final audio
@@ -138,19 +141,21 @@ export class AudioCombiner {
         finalPath,
         bgAnalysis
       );
-      
+
       // Validate final audio against original characteristics
       const finalValidation = await this.audioAnalyzer.validateFinalAudio(
         processedPath,
         bgAnalysis
       );
-      
+
       console.log("Final audio validation results:", finalValidation);
-      
+
       // If validation fails but audio is still usable, log warning but continue
       if (!finalValidation.isValid) {
-        console.warn("Final audio does not perfectly match original characteristics:", 
-          finalValidation.details);
+        console.warn(
+          "Final audio does not perfectly match original characteristics:",
+          finalValidation.details
+        );
       }
 
       return processedPath;
@@ -215,22 +220,22 @@ export class AudioCombiner {
         console.warn(`Invalid duration for segment ${index}: ${duration}s`);
         return null;
       }
-      
+
       // Add a small padding to ensure we don't cut off speech
       const paddingMs = AUDIO_PROCESSING.SEGMENT_PADDING_MS;
       const paddingSec = paddingMs / 1000;
-      
+
       // Calculate precise timing with padding
       const extractStart = Math.max(0, startTime - paddingSec);
-      const extractDuration = duration + (paddingSec * 2);
-      
+      const extractDuration = duration + paddingSec * 2;
+
       console.log(`Creating segment ${index} with precise timing:`, {
         originalStart: startTime,
         originalEnd: endTime,
         originalDuration: duration,
         extractStart,
         extractDuration,
-        paddingMs
+        paddingMs,
       });
 
       // Extract the background segment for this time range
@@ -241,42 +246,54 @@ export class AudioCombiner {
 
       // Analyze speech file to get its characteristics
       const speechAnalysis = await this.audioAnalyzer.analyzeAudio(speechPath);
-      
+
       // Verify speech file duration is close to expected duration
       const speechDuration = speechAnalysis.duration;
       const durationDiff = Math.abs(speechDuration - duration);
-      
-      if (durationDiff > 0.5) { // More than 500ms difference
-        console.warn(`Speech segment ${index} duration (${speechDuration}s) differs significantly from transcript timing (${duration}s)`);
+
+      if (durationDiff > 0.5) {
+        // More than 500ms difference
+        console.warn(
+          `Speech segment ${index} duration (${speechDuration}s) differs significantly from transcript timing (${duration}s)`
+        );
       }
 
-      // Process speech to enhance clarity
-      const processedSpeechPath = path.join(outputDir, `speech_processed_${index}.wav`);
+      // Process speech to enhance clarity with gentler processing
+      const processedSpeechPath = path.join(
+        outputDir,
+        `speech_processed_${index}.wav`
+      );
       await execAsync(
-        `ffmpeg -i "${speechPath}" -af "${FFMPEG_FILTERS.SPEECH_ENHANCEMENT}" -c:a pcm_s16le "${processedSpeechPath}"`
+        `ffmpeg -i "${speechPath}" -af "highpass=f=70,lowpass=f=14000,afftdn=nf=-15" -c:a pcm_s16le "${processedSpeechPath}"`
       );
 
-      // Mix background and speech with precise volume control
+      // Mix background and speech with improved filter complex
       const outputPath = path.join(outputDir, `combined_segment_${index}.wav`);
-      
-      // Use filter complex for precise mixing with crossfade
+
+      // Improved filter complex for better mixing
       const filterComplex = `
-        [0:a]volume=${AUDIO_PROCESSING.BG_WEIGHT}[bg];
+        [0:a]volume=${AUDIO_PROCESSING.BG_WEIGHT},apad[bg];
         [1:a]volume=${AUDIO_PROCESSING.SPEECH_WEIGHT}[speech];
-        [bg][speech]amix=inputs=2:duration=longest,dynaudnorm[out]
+        [bg][speech]amix=inputs=2:duration=longest:weights=${AUDIO_PROCESSING.BG_WEIGHT} ${AUDIO_PROCESSING.SPEECH_WEIGHT}[mixed];
+        [mixed]highpass=f=40,lowpass=f=16000,dynaudnorm=p=0.95:m=10:s=10[out]
       `;
-      
+
       await execAsync(
-        `ffmpeg -i "${bgSegmentPath}" -i "${processedSpeechPath}" -filter_complex "${filterComplex.replace(/\s+/g, ' ')}" -map "[out]" -c:a pcm_s16le "${outputPath}"`
+        `ffmpeg -i "${bgSegmentPath}" -i "${processedSpeechPath}" -filter_complex "${filterComplex.replace(
+          /\s+/g,
+          " "
+        )}" -map "[out]" -c:a pcm_s16le "${outputPath}"`
       );
 
       // Verify the output file
       await this.fileProcessor.verifyFile(outputPath);
-      
+
       // Validate segment timing
       const segmentAnalysis = await this.audioAnalyzer.analyzeAudio(outputPath);
-      console.log(`Segment ${index} created with duration ${segmentAnalysis.duration}s (expected ~${extractDuration}s)`);
-      
+      console.log(
+        `Segment ${index} created with duration ${segmentAnalysis.duration}s (expected ~${extractDuration}s)`
+      );
+
       return outputPath;
     } catch (error) {
       console.error(`Error creating segment ${index}:`, error);
@@ -295,54 +312,91 @@ export class AudioCombiner {
       );
 
       // Create a filter string that matches the original audio characteristics
-      const targetLufs = AUDIO_PROCESSING.TARGET_LUFS;
-      const targetPeak = AUDIO_PROCESSING.MAX_PEAK_DB;
-      
-      // Use the original audio's characteristics to guide processing
+      const targetLufs = originalAnalysis.loudness.integrated; // Use original loudness instead of target
+      const targetPeak = Math.min(-0.5, originalAnalysis.loudness.truePeak); // Preserve original peak but avoid clipping
+
+      // Simplified filter string that focuses on matching original characteristics
+      // without excessive processing that might degrade quality
       const filterString = `
-        loudnorm=I=${targetLufs}:TP=${targetPeak}:LRA=${originalAnalysis.loudness.range}:
-        measured_I=${originalAnalysis.loudness.integrated}:
-        measured_TP=${originalAnalysis.loudness.truePeak}:
-        measured_LRA=${originalAnalysis.loudness.range}:
-        measured_thresh=${originalAnalysis.loudness.threshold}:
-        offset=${originalAnalysis.loudness.offset}:
+        loudnorm=I=${targetLufs}:TP=${targetPeak}:LRA=${
+        originalAnalysis.loudness.range
+      }:
         linear=true:print_format=summary,
-        aresample=${originalAnalysis.format.sampleRate}:
-        resampler=soxr:precision=28:
-        osf=s${originalAnalysis.format.sampleRate < 48000 ? 16 : 24},
-        aformat=channel_layouts=${originalAnalysis.format.channels == 1 ? 'mono' : 'stereo'}
+        aresample=${
+          originalAnalysis.format.sampleRate
+        }:resampler=soxr:precision=28,
+        aformat=channel_layouts=${
+          originalAnalysis.format.channels == 1 ? "mono" : "stereo"
+        }
       `;
-      
-      // Apply the processing
+
+      // Apply the processing with higher quality settings
+      // Use a default bit depth since the property might not exist
+      const codecParam = "pcm_s24le"; // Default to 24-bit audio for better quality
+
       await execAsync(
-        `ffmpeg -i "${inputPath}" -af "${filterString.replace(/\s+/g, ' ')}" -c:a pcm_s16le -y "${outputPath}"`
+        `ffmpeg -i "${inputPath}" -af "${filterString.replace(
+          /\s+/g,
+          " "
+        )}" -c:a ${codecParam} -ar ${
+          originalAnalysis.format.sampleRate
+        } -y "${outputPath}"`
       );
-      
+
       // Verify the output file
       await this.fileProcessor.verifyFile(outputPath);
-      
+
       // Analyze the processed file to confirm it matches target characteristics
-      const processedAnalysis = await this.audioAnalyzer.analyzeAudio(outputPath);
-      
+      const processedAnalysis = await this.audioAnalyzer.analyzeAudio(
+        outputPath
+      );
+
       console.log("Final audio processing results:", {
         original: {
           loudness: originalAnalysis.loudness.integrated,
           peak: originalAnalysis.loudness.truePeak,
           sampleRate: originalAnalysis.format.sampleRate,
-          channels: originalAnalysis.format.channels
+          channels: originalAnalysis.format.channels,
+          codec: originalAnalysis.format.codec || "unknown",
         },
         processed: {
           loudness: processedAnalysis.loudness.integrated,
           peak: processedAnalysis.loudness.truePeak,
           sampleRate: processedAnalysis.format.sampleRate,
-          channels: processedAnalysis.format.channels
+          channels: processedAnalysis.format.channels,
+          codec: processedAnalysis.format.codec || "unknown",
         },
         target: {
           loudness: targetLufs,
-          peak: targetPeak
-        }
+          peak: targetPeak,
+        },
       });
-      
+
+      // If the processed audio doesn't match the original closely enough,
+      // try a simpler approach with minimal processing
+      const loudnessDiff = Math.abs(
+        processedAnalysis.loudness.integrated -
+          originalAnalysis.loudness.integrated
+      );
+      if (loudnessDiff > 2.0) {
+        console.warn(
+          "Processed audio doesn't match original characteristics closely. Trying simpler approach..."
+        );
+
+        const simpleOutputPath = await this.fileProcessor.createTempPath(
+          "simple_processed_final",
+          "wav"
+        );
+
+        // Just copy the format characteristics without heavy processing
+        await execAsync(
+          `ffmpeg -i "${inputPath}" -c:a ${codecParam} -ar ${originalAnalysis.format.sampleRate} -ac ${originalAnalysis.format.channels} -y "${simpleOutputPath}"`
+        );
+
+        await this.fileProcessor.verifyFile(simpleOutputPath);
+        return simpleOutputPath;
+      }
+
       return outputPath;
     } catch (error) {
       console.error("Error applying final processing:", error);
