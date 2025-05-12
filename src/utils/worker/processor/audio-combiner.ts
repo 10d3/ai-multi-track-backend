@@ -170,15 +170,15 @@ export class AudioCombiner {
       "cleaned_bg",
       "wav"
     );
-  
+
     try {
       // Use a simpler filter for background cleaning with less processing
       const cleaningFilter = "dynaudnorm=p=0.95:m=10:s=10:g=5";
-      
+
       await execAsync(
         `ffmpeg -threads 2 -i "${inputPath}" -af "${cleaningFilter}" -c:a pcm_s24le "${outputPath}"`
       );
-      
+
       await this.fileProcessor.verifyFile(outputPath);
       return outputPath;
     } catch (error) {
@@ -232,9 +232,19 @@ export class AudioCombiner {
 
       // Simplified filter complex for basic mixing without heavy processing
       const filterComplex = `
-        [0:a]aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${bgAnalysis.format.channels == 1 ? "mono" : "stereo"},volume=${AUDIO_PROCESSING.BG_WEIGHT}[bg];
-        [1:a]aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${bgAnalysis.format.channels == 1 ? "mono" : "stereo"},volume=${AUDIO_PROCESSING.SPEECH_WEIGHT}[speech];
-        [bg][speech]amix=inputs=2:duration=longest:weights=${AUDIO_PROCESSING.BG_WEIGHT} ${AUDIO_PROCESSING.SPEECH_WEIGHT}[out]
+        [0:a]aformat=sample_fmts=fltp:sample_rates=${
+          bgAnalysis.format.sampleRate
+        }:channel_layouts=${
+        bgAnalysis.format.channels == 1 ? "mono" : "stereo"
+      },volume=${AUDIO_PROCESSING.BG_WEIGHT}[bg];
+        [1:a]aformat=sample_fmts=fltp:sample_rates=${
+          bgAnalysis.format.sampleRate
+        }:channel_layouts=${
+        bgAnalysis.format.channels == 1 ? "mono" : "stereo"
+      },volume=${AUDIO_PROCESSING.SPEECH_WEIGHT}[speech];
+        [bg][speech]amix=inputs=2:duration=longest:weights=${
+          AUDIO_PROCESSING.BG_WEIGHT
+        } ${AUDIO_PROCESSING.SPEECH_WEIGHT}[out]
       `;
 
       await execAsync(
@@ -269,10 +279,23 @@ export class AudioCombiner {
 
       // Create a filter string that matches the original audio characteristics
       const targetLufs = originalAnalysis.loudness.integrated; // Use original loudness instead of target
-      const targetPeak = Math.min(-0.5, originalAnalysis.loudness.truePeak); // Preserve original peak but avoid clipping
+
+      // Ensure TP is within the valid range of -9 to 0 dB
+      const targetPeak = Math.max(
+        -9,
+        Math.min(-0.5, originalAnalysis.loudness.truePeak)
+      );
+
+      console.log(
+        `Using normalized TP value: ${targetPeak} (original: ${originalAnalysis.loudness.truePeak})`
+      );
 
       // Simplified filter string with minimal processing
-      const filterString = `aformat=sample_fmts=fltp:sample_rates=${originalAnalysis.format.sampleRate}:channel_layouts=${originalAnalysis.format.channels == 1 ? "mono" : "stereo"},loudnorm=I=${targetLufs}:TP=${targetPeak}:print_format=summary`;
+      const filterString = `aformat=sample_fmts=fltp:sample_rates=${
+        originalAnalysis.format.sampleRate
+      }:channel_layouts=${
+        originalAnalysis.format.channels == 1 ? "mono" : "stereo"
+      },loudnorm=I=${targetLufs}:TP=${targetPeak}:print_format=summary`;
 
       // Apply the processing with limited thread usage
       const codecParam = "pcm_s24le"; // Default to 24-bit audio for better quality
@@ -283,9 +306,9 @@ export class AudioCombiner {
 
       // Verify the output file
       await this.fileProcessor.verifyFile(outputPath);
-      
+
       console.log("Final audio processing completed");
-      
+
       return outputPath;
     } catch (error) {
       console.error("Error applying final processing:", error);
