@@ -40,9 +40,9 @@ export class AudioCombiner {
         truePeak: bgAnalysis.loudness.truePeak,
       });
 
-      // Clean the background track to improve quality
-      console.log("Cleaning background audio track...");
-      const cleanedBgPath = await this.cleanBackgroundTrack(backgroundPath);
+      // Skip background cleaning and use original background track directly
+      console.log("Using original background track without cleaning...");
+      const originalBgPath = backgroundPath;
 
       // Create a temporary directory for the combined audio segments
       const outputDir = await this.fileProcessor.createTempDir(
@@ -66,7 +66,7 @@ export class AudioCombiner {
 
         // Create segment with precise timing
         const segmentPath = await this.createSegmentWithBackground(
-          cleanedBgPath,
+          originalBgPath,
           speechPaths[i],
           segment.start,
           segment.end,
@@ -165,27 +165,7 @@ export class AudioCombiner {
     }
   }
 
-  private async cleanBackgroundTrack(inputPath: string): Promise<string> {
-    const outputPath = await this.fileProcessor.createTempPath(
-      "cleaned_bg",
-      "wav"
-    );
-
-    try {
-      // Use a simpler filter for background cleaning with less processing
-      const cleaningFilter = "dynaudnorm=p=0.95:m=10:s=10:g=5";
-
-      await execAsync(
-        `ffmpeg -threads 2 -i "${inputPath}" -af "${cleaningFilter}" -c:a pcm_s24le "${outputPath}"`
-      );
-
-      await this.fileProcessor.verifyFile(outputPath);
-      return outputPath;
-    } catch (error) {
-      console.error("Background cleaning failed:", error);
-      throw new Error(`Background cleaning failed: ${error}`);
-    }
-  }
+  // cleanBackgroundTrack method removed as we're using original background track directly
 
   private async createSegmentWithBackground(
     backgroundPath: string,
