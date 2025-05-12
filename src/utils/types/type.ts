@@ -101,6 +101,19 @@ export interface AudioAnalysisResult {
   };
   duration: number;
   originalPath?: string;
+  spectralAnalysis?: {
+    momentaryLoudness?: number;
+    shortTermLoudness?: number;
+    frequencyResponse?: {
+      dynamicRange?: number;
+      peakLevel?: number;
+      bands?: {
+        bass?: { meanVolume?: number; maxVolume?: number; centerFrequency?: number };
+        mid?: { meanVolume?: number; maxVolume?: number; centerFrequency?: number };
+        high?: { meanVolume?: number; maxVolume?: number; centerFrequency?: number };
+      };
+    };
+  };
 }
 
 export type ZyphraModel = "zonos-v0.1-transformer" | "zonos-v0.1-hybrid";
