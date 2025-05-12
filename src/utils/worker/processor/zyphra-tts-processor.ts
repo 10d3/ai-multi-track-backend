@@ -119,8 +119,9 @@ export class ZyphraTTS {
       // Get audio duration
       const duration = await this.fileProcessor.getAudioDuration(audioPath);
 
-      // Create a reference audio file with optimal duration (10-30 seconds)
-      const targetDuration = Math.min(30, Math.max(10, duration));
+      // Create a reference audio file with optimal duration (minimum 30 seconds)
+      // Increased from 10 seconds to 30 seconds for better voice modeling
+      const targetDuration = Math.min(60, Math.max(30, duration));
       const startTime =
         duration > targetDuration ? (duration - targetDuration) / 2 : 0;
 
@@ -129,9 +130,15 @@ export class ZyphraTTS {
         "wav"
       );
 
-      // Extract the segment with the best audio quality
+      // Enhanced preprocessing for cleaner reference audio
+      // 1. Apply highpass filter to remove low-frequency noise
+      // 2. Apply lowpass filter to remove high-frequency noise
+      // 3. Apply noise reduction filter (afftdn) with stronger settings
+      // 4. Apply compression to normalize volume
+      // 5. Apply de-essing to reduce sibilance
+      // 6. Apply final normalization for consistent volume
       await execAsync(
-        `ffmpeg -i "${audioPath}" -ss ${startTime} -t ${targetDuration} -af "highpass=f=50,lowpass=f=15000,afftdn=nf=-25" -c:a pcm_s16le "${outputPath}"`
+        `ffmpeg -i "${audioPath}" -ss ${startTime} -t ${targetDuration} -af "highpass=f=80,lowpass=f=12000,afftdn=nf=-30:nt=w,acompressor=threshold=0.05:ratio=4:attack=200:release=1000,adeclick=t=1:b=5,aresample=44100,loudnorm=I=-16:TP=-1.5:LRA=11" -c:a pcm_s16le "${outputPath}"`
       );
 
       await this.fileProcessor.verifyFile(outputPath);
@@ -147,7 +154,7 @@ export class ZyphraTTS {
   private async concatenateReferenceAudios(
     primaryAudioPath: string,
     secondaryAudioPath: string = "fallback_reference.wav",
-    minSeconds: number = 10
+    minSeconds: number = 30  // Updated from 10 to 30 seconds minimum
   ): Promise<string> {
     try {
       console.log(
@@ -174,14 +181,38 @@ export class ZyphraTTS {
         `[ZyphraTTS] Created temp path for combined reference: ${tempPath}`
       );
 
-      // Concatenate two different audio files
-      const ffmpegCmd = `ffmpeg -i "${primaryAudioPath}" -i "${secondaryAudioPath}" \
-        -filter_complex "[0:a][1:a]concat=n=2:v=0:a=1[out]" \
-        -map "[out]" "${tempPath}"`;
+      // Check if we need to loop the primary audio to reach minimum duration
+      if (primaryDuration > 0 && primaryDuration < minSeconds) {
+        const loopCount = Math.ceil(minSeconds / primaryDuration);
+        console.log(`[ZyphraTTS] Looping primary audio ${loopCount} times to reach minimum duration`);
+        
+        // Create a filter complex to loop the primary audio
+        const loopFilter = `[0:a]aloop=loop=${loopCount - 1}:size=2e+09[out]`;
+        
+        // Apply enhanced audio processing to the looped audio
+        const ffmpegCmd = `ffmpeg -i "${primaryAudioPath}" \
+          -filter_complex "${loopFilter}" \
+          -map "[out]" -af "highpass=f=80,lowpass=f=12000,afftdn=nf=-30:nt=w,acompressor=threshold=0.05:ratio=4:attack=200:release=1000,adeclick=t=1:b=5,aresample=44100,loudnorm=I=-16:TP=-1.5:LRA=11" \
+          "${tempPath}"`;
+        
+        console.log(`[ZyphraTTS] Executing FFmpeg loop command: ${ffmpegCmd}`);
+        await execAsync(ffmpegCmd);
+      } else {
+        // Concatenate two different audio files with enhanced processing
+        const ffmpegCmd = `ffmpeg -i "${primaryAudioPath}" -i "${secondaryAudioPath}" \
+          -filter_complex "[0:a][1:a]concat=n=2:v=0:a=1[concat];[concat]highpass=f=80,lowpass=f=12000,afftdn=nf=-30:nt=w,acompressor=threshold=0.05:ratio=4:attack=200:release=1000,adeclick=t=1:b=5,aresample=44100,loudnorm=I=-16:TP=-1.5:LRA=11[out]" \
+          -map "[out]" "${tempPath}"`;
 
-      console.log(`[ZyphraTTS] Executing FFmpeg command: ${ffmpegCmd}`);
-      await execAsync(ffmpegCmd);
-      console.log(`[ZyphraTTS] FFmpeg concatenation completed successfully`);
+        console.log(`[ZyphraTTS] Executing FFmpeg concatenation command: ${ffmpegCmd}`);
+        await execAsync(ffmpegCmd);
+      }
+      
+      console.log(`[ZyphraTTS] FFmpeg processing completed successfully`);
+      await this.fileProcessor.verifyFile(tempPath);
+      
+      // Get the final duration to verify
+      const finalDuration = await this.fileProcessor.getAudioDuration(tempPath);
+      console.log(`[ZyphraTTS] Final reference audio duration: ${finalDuration}s`);
 
       return readFileSync(tempPath).toString("base64");
     } catch (error) {
