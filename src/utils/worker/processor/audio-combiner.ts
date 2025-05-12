@@ -206,25 +206,56 @@ export class AudioCombiner {
         `ffmpeg -threads 2 -i "${backgroundPath}" -ss ${extractStart} -t ${extractDuration} -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${bgSegmentPath}"`
       );
 
-      // Skip detailed speech analysis and directly mix with background
-      // Mix background and speech with simplified approach
+      // Analyze the speech file to get its characteristics
+      console.log(`Analyzing speech file ${index} for optimal mixing...`);
+      const speechAnalysis = await this.audioAnalyzer.analyzeAudio(speechPath);
+      
+      // Calculate optimal mixing parameters based on analysis
+      const speechLoudness = speechAnalysis.loudness.integrated;
+      const bgLoudness = bgAnalysis.loudness.integrated;
+      
+      // Dynamically adjust volume weights based on loudness difference
+      // This ensures consistent speech clarity across different segments
+      const loudnessDiff = Math.abs(speechLoudness - bgLoudness);
+      
+      // Calculate optimal speech weight - increase if speech is quieter than background
+      let speechWeight = AUDIO_PROCESSING.SPEECH_WEIGHT;
+      let bgWeight = AUDIO_PROCESSING.BG_WEIGHT;
+      
+      if (speechLoudness < bgLoudness - 5) {
+        // Speech is significantly quieter than background, boost it more
+        speechWeight = Math.min(1.5, speechWeight * 1.2);
+        bgWeight = Math.max(0.2, bgWeight * 0.9);
+      } else if (speechLoudness > bgLoudness + 5) {
+        // Speech is significantly louder than background, reduce it slightly
+        speechWeight = Math.max(0.9, speechWeight * 0.9);
+        bgWeight = Math.min(0.4, bgWeight * 1.1);
+      }
+      
+      console.log(`Segment ${index} mixing parameters:`, {
+        speechLoudness: speechLoudness.toFixed(2),
+        bgLoudness: bgLoudness.toFixed(2),
+        loudnessDiff: loudnessDiff.toFixed(2),
+        speechWeight: speechWeight.toFixed(2),
+        bgWeight: bgWeight.toFixed(2)
+      });
+
+      // Prepare the output path
       const outputPath = path.join(outputDir, `combined_segment_${index}.wav`);
 
-      // Simplified filter complex for basic mixing without heavy processing
+      // Enhanced filter complex for better audio quality and mixing
+      // 1. Apply gentle speech enhancement to improve clarity
+      // 2. Match sample rates and channel layouts
+      // 3. Apply dynamic volume adjustment
+      // 4. Mix with precise weights
+      // 5. Apply gentle compression to even out levels
+      const channelLayout = bgAnalysis.format.channels == 1 ? "mono" : "stereo";
       const filterComplex = `
-        [0:a]aformat=sample_fmts=fltp:sample_rates=${
-          bgAnalysis.format.sampleRate
-        }:channel_layouts=${
-        bgAnalysis.format.channels == 1 ? "mono" : "stereo"
-      },volume=${AUDIO_PROCESSING.BG_WEIGHT}[bg];
-        [1:a]aformat=sample_fmts=fltp:sample_rates=${
-          bgAnalysis.format.sampleRate
-        }:channel_layouts=${
-        bgAnalysis.format.channels == 1 ? "mono" : "stereo"
-      },volume=${AUDIO_PROCESSING.SPEECH_WEIGHT}[speech];
-        [bg][speech]amix=inputs=2:duration=longest:weights=${
-          AUDIO_PROCESSING.BG_WEIGHT
-        } ${AUDIO_PROCESSING.SPEECH_WEIGHT}[out]
+        [0:a]aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout},volume=${bgWeight}[bg];
+        [1:a]aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout},
+        highpass=f=80,lowpass=f=12000,volume=${speechWeight}[speech];
+        [bg][speech]amix=inputs=2:duration=longest:weights=${bgWeight} ${speechWeight}[mixed];
+        [mixed]acompressor=threshold=-18dB:ratio=2:attack=20:release=100:makeup=1[out]
       `;
 
       await execAsync(
@@ -237,8 +268,13 @@ export class AudioCombiner {
       // Verify the output file
       await this.fileProcessor.verifyFile(outputPath);
 
-      // Log segment creation without detailed analysis
-      console.log(`Segment ${index} created successfully`);
+      // Analyze the final segment to ensure quality
+      const segmentAnalysis = await this.audioAnalyzer.analyzeAudio(outputPath);
+      console.log(`Segment ${index} created successfully with characteristics:`, {
+        duration: segmentAnalysis.duration.toFixed(2) + "s",
+        loudness: segmentAnalysis.loudness.integrated.toFixed(2) + " LUFS",
+        peak: segmentAnalysis.loudness.truePeak.toFixed(2) + " dB"
+      });
 
       return outputPath;
     } catch (error) {
@@ -252,42 +288,181 @@ export class AudioCombiner {
     originalAnalysis: any
   ): Promise<string> {
     try {
+      console.log("Starting enhanced final audio processing with spectral matching...");
+      
+      // Create intermediate paths for multi-stage processing
+      const spectrumMatchedPath = await this.fileProcessor.createTempPath(
+        "spectrum_matched",
+        "wav"
+      );
+      
+      const dynamicsMatchedPath = await this.fileProcessor.createTempPath(
+        "dynamics_matched",
+        "wav"
+      );
+      
       const outputPath = await this.fileProcessor.createTempPath(
         "processed_final",
         "wav"
       );
 
-      // Create a filter string that matches the original audio characteristics
-      const targetLufs = originalAnalysis.loudness.integrated; // Use original loudness instead of target
-
+      // Extract target parameters from original analysis
+      const targetLufs = originalAnalysis.loudness.integrated;
+      const targetRange = originalAnalysis.loudness.range;
+      
       // Ensure TP is within the valid range of -9 to 0 dB
       const targetPeak = Math.max(
         -9,
         Math.min(-0.5, originalAnalysis.loudness.truePeak)
       );
-
-      console.log(
-        `Using normalized TP value: ${targetPeak} (original: ${originalAnalysis.loudness.truePeak})`
+      
+      // Get channel layout string
+      const channelLayout = originalAnalysis.format.channels == 1 ? "mono" : "stereo";
+      
+      console.log("Original audio characteristics:", {
+        sampleRate: originalAnalysis.format.sampleRate,
+        channels: originalAnalysis.format.channels,
+        lufs: targetLufs,
+        truePeak: targetPeak,
+        dynamicRange: targetRange
+      });
+      
+      // Perform detailed spectral analysis on the original audio
+      console.log("Performing detailed spectral analysis on original audio...");
+      const originalSpectralAnalysis = await this.audioAnalyzer.analyzeSpectralCharacteristics(
+        inputPath
       );
+      
+      // Analyze the input file to compare with original
+      const inputAnalysis = await this.audioAnalyzer.analyzeAudio(inputPath);
+      
+      // Calculate spectral differences to create a custom EQ curve
+      console.log("Calculating spectral differences for precise matching...");
+      
+      // Extract frequency band information from the original analysis
+      const originalBassResponse = originalSpectralAnalysis.frequencyResponse?.bands?.bass?.meanVolume || -30;
+      const originalMidResponse = originalSpectralAnalysis.frequencyResponse?.bands?.mid?.meanVolume || -30;
+      const originalHighResponse = originalSpectralAnalysis.frequencyResponse?.bands?.high?.meanVolume || -30;
+      
+      // Analyze the input file's spectral characteristics
+      const inputSpectralAnalysis = await this.audioAnalyzer.analyzeSpectralCharacteristics(
+        inputPath
+      );
+      
+      // Extract frequency band information from the input analysis
+      const inputBassResponse = inputSpectralAnalysis.frequencyResponse?.bands?.bass?.meanVolume || -30;
+      const inputMidResponse = inputSpectralAnalysis.frequencyResponse?.bands?.mid?.meanVolume || -30;
+      const inputHighResponse = inputSpectralAnalysis.frequencyResponse?.bands?.high?.meanVolume || -30;
+      
+      // Calculate the differences between original and input
+      // Limit adjustments to reasonable values (-6 to +6 dB)
+      const bassDiff = Math.max(-6, Math.min(6, originalBassResponse - inputBassResponse));
+      const midDiff = Math.max(-6, Math.min(6, originalMidResponse - inputMidResponse));
+      const highDiff = Math.max(-6, Math.min(6, originalHighResponse - inputHighResponse));
+      
+      console.log("Spectral difference analysis:", {
+        bass: {
+          original: originalBassResponse,
+          input: inputBassResponse,
+          adjustment: bassDiff
+        },
+        mid: {
+          original: originalMidResponse,
+          input: inputMidResponse,
+          adjustment: midDiff
+        },
+        high: {
+          original: originalHighResponse,
+          input: inputHighResponse,
+          adjustment: highDiff
+        }
+      });
 
-      // Simplified filter string with minimal processing
-      const filterString = `aformat=sample_fmts=fltp:sample_rates=${
-        originalAnalysis.format.sampleRate
-      }:channel_layouts=${
-        originalAnalysis.format.channels == 1 ? "mono" : "stereo"
-      },loudnorm=I=${targetLufs}:TP=${targetPeak}:print_format=summary`;
-
-      // Apply the processing with limited thread usage
-      const codecParam = "pcm_s24le"; // Default to 24-bit audio for better quality
-
+      // STAGE 1: Match spectral characteristics with adaptive EQ based on analysis
+      // This uses a multi-band equalizer with adjustments based on spectral analysis
+      const spectralFilter = `aformat=sample_fmts=fltp:sample_rates=${originalAnalysis.format.sampleRate}:channel_layouts=${channelLayout},
+        equalizer=f=32:t=q:w=1:g=${bassDiff * 0.8},
+        equalizer=f=64:t=q:w=1:g=${bassDiff * 0.9},
+        equalizer=f=125:t=q:w=1:g=${bassDiff},
+        equalizer=f=250:t=q:w=1:g=${bassDiff * 0.7 + midDiff * 0.3},
+        equalizer=f=500:t=q:w=1:g=${bassDiff * 0.3 + midDiff * 0.7},
+        equalizer=f=1000:t=q:w=1:g=${midDiff},
+        equalizer=f=2000:t=q:w=1:g=${midDiff * 0.7 + highDiff * 0.3},
+        equalizer=f=4000:t=q:w=1:g=${midDiff * 0.3 + highDiff * 0.7},
+        equalizer=f=8000:t=q:w=1:g=${highDiff},
+        equalizer=f=16000:t=q:w=1:g=${highDiff * 0.9}`;
+      
+      console.log("Applying adaptive spectral matching...");
       await execAsync(
-        `ffmpeg -threads 2 -i "${inputPath}" -af "${filterString}" -c:a ${codecParam} -ar ${originalAnalysis.format.sampleRate} -ac ${originalAnalysis.format.channels} -y "${outputPath}"`
+        `ffmpeg -threads 2 -i "${inputPath}" -af "${spectralFilter.replace(/\s+/g, ' ')}" -c:a pcm_s24le -ar ${originalAnalysis.format.sampleRate} -ac ${originalAnalysis.format.channels} -y "${spectrumMatchedPath}"`
+      );
+      
+      // STAGE 2: Match dynamics and compression characteristics
+      // Calculate optimal compression parameters based on dynamic range analysis
+      const dynamicRange = Math.max(1, Math.min(20, targetRange));
+      const originalDynamicRange = originalSpectralAnalysis.frequencyResponse?.dynamicRange || dynamicRange;
+      const inputDynamicRange = inputSpectralAnalysis.frequencyResponse?.dynamicRange || dynamicRange;
+      
+      // Adjust compression ratio based on the difference in dynamic range
+      const dynamicRangeDiff = originalDynamicRange - inputDynamicRange;
+      const compressionRatio = dynamicRangeDiff > 2 ? 2.5 : 
+                              dynamicRangeDiff > 0 ? 2 : 
+                              dynamicRangeDiff > -2 ? 1.5 : 1.2;
+      
+      // Adjust threshold based on original audio characteristics
+      const threshold = originalAnalysis.loudness.integrated < -20 ? -24 : 
+                       originalAnalysis.loudness.integrated < -16 ? -20 : 
+                       originalAnalysis.loudness.integrated < -12 ? -18 : -16;
+      
+      console.log("Dynamic range adjustment parameters:", {
+        originalDynamicRange,
+        inputDynamicRange,
+        dynamicRangeDiff,
+        compressionRatio,
+        threshold
+      });
+      
+      const dynamicsFilter = `acompressor=threshold=${threshold}dB:ratio=${compressionRatio}:attack=200:release=1000:makeup=1,
+        aexpand=threshold=${threshold-10}dB:ratio=1.5:attack=200:release=1000`;
+      
+      console.log("Applying adaptive dynamics matching...");
+      await execAsync(
+        `ffmpeg -threads 2 -i "${spectrumMatchedPath}" -af "${dynamicsFilter.replace(/\s+/g, ' ')}" -c:a pcm_s24le -ar ${originalAnalysis.format.sampleRate} -ac ${originalAnalysis.format.channels} -y "${dynamicsMatchedPath}"`
+      );
+      
+      // STAGE 3: Final loudness normalization to match original exactly
+      // This uses the precise loudnorm filter with the original parameters
+      const loudnessFilter = `loudnorm=I=${targetLufs}:TP=${targetPeak}:LRA=${dynamicRange}:print_format=summary`;
+      
+      console.log("Applying final loudness normalization...");
+      console.log(`Target parameters: LUFS=${targetLufs}, TP=${targetPeak}, LRA=${dynamicRange}`);
+      
+      await execAsync(
+        `ffmpeg -threads 2 -i "${dynamicsMatchedPath}" -af "${loudnessFilter}" -c:a pcm_s24le -ar ${originalAnalysis.format.sampleRate} -ac ${originalAnalysis.format.channels} -y "${outputPath}"`
       );
 
       // Verify the output file
       await this.fileProcessor.verifyFile(outputPath);
 
-      console.log("Final audio processing completed");
+      // Analyze the final output to verify it matches the target
+      const finalAnalysis = await this.audioAnalyzer.analyzeAudio(outputPath);
+      
+      // Perform a final spectral analysis to verify the match
+      const finalSpectralAnalysis = await this.audioAnalyzer.analyzeSpectralCharacteristics(outputPath);
+      
+      // Calculate the final spectral match score (0-100)
+      const bassMatchScore = 100 - Math.min(100, Math.abs(originalBassResponse - finalSpectralAnalysis.frequencyResponse?.bands?.bass?.meanVolume || 0) * 5);
+      const midMatchScore = 100 - Math.min(100, Math.abs(originalMidResponse - finalSpectralAnalysis.frequencyResponse?.bands?.mid?.meanVolume || 0) * 5);
+      const highMatchScore = 100 - Math.min(100, Math.abs(originalHighResponse - finalSpectralAnalysis.frequencyResponse?.bands?.high?.meanVolume || 0) * 5);
+      
+      const spectralMatchScore = Math.round((bassMatchScore * 0.4) + (midMatchScore * 0.4) + (highMatchScore * 0.2));
+      
+      console.log("Final audio processing completed with characteristics:", {
+        lufs: finalAnalysis.loudness.integrated.toFixed(2),
+        truePeak: finalAnalysis.loudness.truePeak.toFixed(2),
+        dynamicRange: finalAnalysis.loudness.range.toFixed(2),
+        spectralMatchScore: `${spectralMatchScore}%`
+      });
 
       return outputPath;
     } catch (error) {

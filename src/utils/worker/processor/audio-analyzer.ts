@@ -3,6 +3,7 @@ import { exec } from "child_process";
 import type { FileProcessor } from "./file-processor";
 import type { AudioAnalysisResult } from "../../types/type";
 import { AUDIO_PROCESSING } from "./constants";
+import fs from "fs/promises";
 
 const execAsync = promisify(exec);
 
@@ -87,6 +88,7 @@ export class AudioAnalyzer {
           codec: audioStream.codec_name || "pcm_s16le",
         },
         duration: parseFloat(audioInfo.format?.duration || "0"),
+        originalPath: filePath, // Store the original file path for spectral matching
       };
 
       // Validate the result to ensure we have valid values
@@ -141,34 +143,104 @@ export class AudioAnalyzer {
   }
 
   /**
-   * Analyzes specific spectral characteristics of an audio file
-   * Can be used for more detailed audio matching
+   * Analyzes comprehensive spectral characteristics of an audio file
+   * Used for detailed audio matching and processing
    */
   async analyzeSpectralCharacteristics(filePath: string): Promise<any> {
     try {
       await this.fileProcessor.verifyFile(filePath);
 
-      // Get spectral information using ffmpeg's ebur128 filter
-      const { stdout } = await execAsync(
+      // Get basic spectral information using ffmpeg's ebur128 filter
+      const { stdout: ebur128Output } = await execAsync(
         `ffmpeg -i "${filePath}" -af "ebur128=metadata=1" -f null - 2>&1`
       );
 
-      // Parse the output to extract spectral information
-      const momentaryMatch = stdout.match(/Momentary:\s+([-\d.]+)/);
-      const shortTermMatch = stdout.match(/Short term:\s+([-\d.]+)/);
-
+      // Parse the output to extract basic spectral information
+      const momentaryMatch = ebur128Output.match(/Momentary:\s+([-\d.]+)/);
+      const shortTermMatch = ebur128Output.match(/Short term:\s+([-\d.]+)/);
+      
+      // Get detailed frequency analysis using FFT filter
+      // This creates a more comprehensive spectral fingerprint
+      const tempCsvPath = await this.fileProcessor.createTempPath("spectrum", "csv");
+      
+      // Use FFT analysis to get frequency distribution
+      // We sample at different points to get a better overall picture
+      await execAsync(
+        `ffmpeg -i "${filePath}" -af "afftfilt=real='re(1)':imag='im(1)',astats=metadata=1:reset=1:length=2000:measure_perchannel=metadata:measure_overall=metadata" -f null - 2> "${tempCsvPath}"`
+      );
+      
+      // Read and parse the FFT data
+      const fftData = await fs.readFile(tempCsvPath, 'utf8');
+      
+      // Extract frequency bands information
+      const lowFreqMatch = fftData.match(/lavfi\.astats\.Overall\.low_freq=([\d.]+)/);
+      const highFreqMatch = fftData.match(/lavfi\.astats\.Overall\.high_freq=([\d.]+)/);
+      const flatnessMatch = fftData.match(/lavfi\.astats\.Overall\.flatness=([\d.]+)/);
+      
+      // Extract dynamic range information
+      const dynamicRangeMatch = fftData.match(/lavfi\.astats\.Overall\.dynamic_range=([\d.]+)/);
+      const peakLevelMatch = fftData.match(/lavfi\.astats\.Overall\.peak_level=([\d.]+)/);
+      
+      // Clean up temp file
+      await fs.unlink(tempCsvPath).catch(() => {});
+      
+      // Analyze frequency response using multi-band filter
+      const { stdout: freqBandOutput } = await execAsync(
+        `ffmpeg -i "${filePath}" -af "afreqshift=shift=0:order=8,bandpass=f=100:width_type=h:w=50,volumedetect" -f null - 2>&1`
+      );
+      
+      // Extract frequency band information
+      const bassResponse = this.extractFrequencyBandResponse(freqBandOutput, 100);
+      
+      // Analyze mid frequencies
+      const { stdout: midFreqOutput } = await execAsync(
+        `ffmpeg -i "${filePath}" -af "afreqshift=shift=0:order=8,bandpass=f=1000:width_type=h:w=500,volumedetect" -f null - 2>&1`
+      );
+      
+      const midResponse = this.extractFrequencyBandResponse(midFreqOutput, 1000);
+      
+      // Analyze high frequencies
+      const { stdout: highFreqOutput } = await execAsync(
+        `ffmpeg -i "${filePath}" -af "afreqshift=shift=0:order=8,bandpass=f=8000:width_type=h:w=4000,volumedetect" -f null - 2>&1`
+      );
+      
+      const highResponse = this.extractFrequencyBandResponse(highFreqOutput, 8000);
+      
+      // Compile comprehensive spectral analysis
       return {
-        momentaryLoudness: momentaryMatch
-          ? parseFloat(momentaryMatch[1])
-          : null,
-        shortTermLoudness: shortTermMatch
-          ? parseFloat(shortTermMatch[1])
-          : null,
+        momentaryLoudness: momentaryMatch ? parseFloat(momentaryMatch[1]) : null,
+        shortTermLoudness: shortTermMatch ? parseFloat(shortTermMatch[1]) : null,
+        frequencyResponse: {
+          lowFreq: lowFreqMatch ? parseFloat(lowFreqMatch[1]) : null,
+          highFreq: highFreqMatch ? parseFloat(highFreqMatch[1]) : null,
+          spectralFlatness: flatnessMatch ? parseFloat(flatnessMatch[1]) : null,
+          dynamicRange: dynamicRangeMatch ? parseFloat(dynamicRangeMatch[1]) : null,
+          peakLevel: peakLevelMatch ? parseFloat(peakLevelMatch[1]) : null,
+          bands: {
+            bass: bassResponse,
+            mid: midResponse,
+            high: highResponse
+          }
+        }
       };
     } catch (error: any) {
       console.error("Error analyzing spectral characteristics:", error);
       throw new Error(`Spectral analysis failed: ${error.message || error}`);
     }
+  }
+  
+  /**
+   * Helper method to extract frequency band response from FFmpeg output
+   */
+  private extractFrequencyBandResponse(output: string, centerFreq: number): any {
+    const meanVolumeMatch = output.match(/mean_volume: ([-\d.]+) dB/);
+    const maxVolumeMatch = output.match(/max_volume: ([-\d.]+) dB/);
+    
+    return {
+      centerFrequency: centerFreq,
+      meanVolume: meanVolumeMatch ? parseFloat(meanVolumeMatch[1]) : null,
+      maxVolume: maxVolumeMatch ? parseFloat(maxVolumeMatch[1]) : null
+    };
   }
 
   /**
@@ -258,14 +330,17 @@ export class AudioAnalyzer {
 
   /**
    * Validates that the final audio characteristics match the original within acceptable thresholds
+   * Enhanced with spectral analysis for more accurate matching
    */
   async validateFinalAudio(
     finalPath: string, 
     originalAnalysis: AudioAnalysisResult
   ): Promise<{isValid: boolean; details: any}> {
     try {
+      console.log("Performing comprehensive audio validation with spectral analysis...");
       const finalAnalysis = await this.analyzeAudio(finalPath);
       
+      // Basic audio characteristics validation
       const loudnessDiff = Math.abs(
         finalAnalysis.loudness.integrated - originalAnalysis.loudness.integrated
       );
@@ -274,42 +349,157 @@ export class AudioAnalyzer {
         finalAnalysis.loudness.truePeak - originalAnalysis.loudness.truePeak
       );
       
+      const rangeDiff = Math.abs(
+        finalAnalysis.loudness.range - originalAnalysis.loudness.range
+      );
+      
       const durationRatio = Math.abs(
         1 - (finalAnalysis.duration / originalAnalysis.duration)
       );
       
+      // Format validation
+      const isSampleRateValid = finalAnalysis.format.sampleRate === originalAnalysis.format.sampleRate;
+      const isChannelsValid = finalAnalysis.format.channels === originalAnalysis.format.channels;
+      
+      // Threshold validation
       const isLoudnessValid = loudnessDiff <= AUDIO_PROCESSING.LOUDNESS_MATCH_THRESHOLD;
       const isPeakValid = peakDiff <= AUDIO_PROCESSING.PEAK_MATCH_THRESHOLD;
+      const isRangeValid = rangeDiff <= AUDIO_PROCESSING.LOUDNESS_MATCH_THRESHOLD;
       const isDurationValid = durationRatio <= AUDIO_PROCESSING.DURATION_MATCH_THRESHOLD;
       
-      const isValid = isLoudnessValid && isPeakValid && isDurationValid;
+      // Enhanced spectral analysis validation
+      console.log("Performing detailed spectral analysis comparison...");
+      const originalSpectralAnalysis = await this.analyzeSpectralCharacteristics(originalAnalysis.originalPath || finalPath);
+      const finalSpectralAnalysis = await this.analyzeSpectralCharacteristics(finalPath);
       
-      return {
+      // Extract frequency band information
+      const originalBassResponse = originalSpectralAnalysis.frequencyResponse?.bands?.bass?.meanVolume || -30;
+      const originalMidResponse = originalSpectralAnalysis.frequencyResponse?.bands?.mid?.meanVolume || -30;
+      const originalHighResponse = originalSpectralAnalysis.frequencyResponse?.bands?.high?.meanVolume || -30;
+      
+      const finalBassResponse = finalSpectralAnalysis.frequencyResponse?.bands?.bass?.meanVolume || -30;
+      const finalMidResponse = finalSpectralAnalysis.frequencyResponse?.bands?.mid?.meanVolume || -30;
+      const finalHighResponse = finalSpectralAnalysis.frequencyResponse?.bands?.high?.meanVolume || -30;
+      
+      // Calculate spectral differences
+      const bassDiff = Math.abs(originalBassResponse - finalBassResponse);
+      const midDiff = Math.abs(originalMidResponse - finalMidResponse);
+      const highDiff = Math.abs(originalHighResponse - finalHighResponse);
+      
+      // Calculate spectral match scores (0-100)
+      const bassMatchScore = Math.max(0, 100 - (bassDiff * 5));
+      const midMatchScore = Math.max(0, 100 - (midDiff * 5));
+      const highMatchScore = Math.max(0, 100 - (highDiff * 5));
+      
+      // Calculate overall spectral match score
+      const spectralMatchScore = Math.round((bassMatchScore * 0.4) + (midMatchScore * 0.4) + (highMatchScore * 0.2));
+      
+      // Determine if spectral match is valid
+      const isSpectralValid = spectralMatchScore >= 70; // 70% or better spectral match
+      
+      // Calculate overall quality score (0-100) with spectral component
+      const loudnessScore = Math.max(0, 100 - (loudnessDiff * 20));
+      const peakScore = Math.max(0, 100 - (peakDiff * 15));
+      const rangeScore = Math.max(0, 100 - (rangeDiff * 10));
+      const durationScore = Math.max(0, 100 - (durationRatio * 200));
+      
+      const overallScore = Math.round(
+        (loudnessScore * 0.3) + (peakScore * 0.2) + (rangeScore * 0.1) + (durationScore * 0.1) + (spectralMatchScore * 0.3)
+      );
+      
+      // Determine if the audio is valid based on critical parameters
+      // We now include spectral validity but with some flexibility
+      const isValid = isLoudnessValid && isPeakValid && isDurationValid && 
+                     isSampleRateValid && isChannelsValid && 
+                     (isSpectralValid || overallScore >= 80); // Allow some flexibility if overall score is good
+      
+      // Create detailed validation report
+      const validationReport = {
         isValid,
+        overallScore,
+        qualityRating: this.getQualityRating(overallScore),
         details: {
+          format: {
+            sampleRate: {
+              original: originalAnalysis.format.sampleRate,
+              final: finalAnalysis.format.sampleRate,
+              isValid: isSampleRateValid
+            },
+            channels: {
+              original: originalAnalysis.format.channels,
+              final: finalAnalysis.format.channels,
+              isValid: isChannelsValid
+            }
+          },
           loudness: {
-            original: originalAnalysis.loudness.integrated,
-            final: finalAnalysis.loudness.integrated,
-            difference: loudnessDiff,
+            original: originalAnalysis.loudness.integrated.toFixed(2),
+            final: finalAnalysis.loudness.integrated.toFixed(2),
+            difference: loudnessDiff.toFixed(2),
+            score: loudnessScore,
             isValid: isLoudnessValid
           },
           peak: {
-            original: originalAnalysis.loudness.truePeak,
-            final: finalAnalysis.loudness.truePeak,
-            difference: peakDiff,
+            original: originalAnalysis.loudness.truePeak.toFixed(2),
+            final: finalAnalysis.loudness.truePeak.toFixed(2),
+            difference: peakDiff.toFixed(2),
+            score: peakScore,
             isValid: isPeakValid
           },
+          dynamicRange: {
+            original: originalAnalysis.loudness.range.toFixed(2),
+            final: finalAnalysis.loudness.range.toFixed(2),
+            difference: rangeDiff.toFixed(2),
+            score: rangeScore,
+            isValid: isRangeValid
+          },
           duration: {
-            original: originalAnalysis.duration,
-            final: finalAnalysis.duration,
-            ratio: durationRatio,
+            original: originalAnalysis.duration.toFixed(2),
+            final: finalAnalysis.duration.toFixed(2),
+            ratio: durationRatio.toFixed(4),
+            score: durationScore,
             isValid: isDurationValid
+          },
+          spectral: {
+            bassMatch: {
+              original: originalBassResponse.toFixed(2),
+              final: finalBassResponse.toFixed(2),
+              difference: bassDiff.toFixed(2),
+              score: bassMatchScore
+            },
+            midMatch: {
+              original: originalMidResponse.toFixed(2),
+              final: finalMidResponse.toFixed(2),
+              difference: midDiff.toFixed(2),
+              score: midMatchScore
+            },
+            highMatch: {
+              original: originalHighResponse.toFixed(2),
+              final: finalHighResponse.toFixed(2),
+              difference: highDiff.toFixed(2),
+              score: highMatchScore
+            },
+            overallSpectralScore: spectralMatchScore,
+            isValid: isSpectralValid
           }
         }
       };
+      
+      console.log(`Audio validation complete. Overall score: ${overallScore}/100 (${validationReport.qualityRating})`);
+      console.log(`Spectral match score: ${spectralMatchScore}/100 (${isSpectralValid ? 'Valid' : 'Needs improvement'})`);
+      
+      return validationReport;
     } catch (error) {
       console.error("Error validating final audio:", error);
       throw new Error(`Final audio validation failed: ${error}`);
     }
+  }
+  
+  private getQualityRating(score: number): string {
+    if (score >= 95) return "Excellent";
+    if (score >= 85) return "Very Good";
+    if (score >= 75) return "Good";
+    if (score >= 65) return "Acceptable";
+    if (score >= 50) return "Fair";
+    return "Poor";
   }
 }

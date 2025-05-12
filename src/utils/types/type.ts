@@ -100,6 +100,7 @@ export interface AudioAnalysisResult {
     codec: string;
   };
   duration: number;
+  originalPath?: string;
 }
 
 export type ZyphraModel = "zonos-v0.1-transformer" | "zonos-v0.1-hybrid";
