@@ -223,13 +223,16 @@ export class AudioCombiner {
       let bgWeight = AUDIO_PROCESSING.BG_WEIGHT;
 
       if (speechLoudness < bgLoudness - 5) {
-        // Speech is significantly quieter than background, boost it more
+        // Speech is significantly quieter than background, boost it more but preserve background
         speechWeight = Math.min(1.5, speechWeight * 1.2);
-        bgWeight = Math.max(0.2, bgWeight * 0.9);
+        bgWeight = Math.max(0.4, bgWeight * 0.95); // Keep more background
       } else if (speechLoudness > bgLoudness + 5) {
-        // Speech is significantly louder than background, reduce it slightly
-        speechWeight = Math.max(0.9, speechWeight * 0.9);
-        bgWeight = Math.min(0.4, bgWeight * 1.1);
+        // Speech is significantly louder than background, reduce it slightly and boost background
+        speechWeight = Math.max(0.8, speechWeight * 0.85);
+        bgWeight = Math.min(0.8, bgWeight * 1.25); // Boost background more
+      } else {
+        // Even when loudness is similar, ensure background is clearly audible
+        bgWeight = Math.min(0.8, bgWeight * 1.1);
       }
 
       console.log(`Segment ${index} mixing parameters:`, {
@@ -254,8 +257,8 @@ export class AudioCombiner {
         [0:a]aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout},volume=${bgWeight}[bg];
         [1:a]aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout},
         highpass=f=80,lowpass=f=12000,volume=${speechWeight}[speech];
-        [bg][speech]amix=inputs=2:duration=longest:weights=${bgWeight} ${speechWeight}[mixed];
-        [mixed]acompressor=threshold=-18dB:ratio=2:attack=20:release=100:makeup=1[out]
+        [bg][speech]amix=inputs=2:duration=longest:weights=${bgWeight * 1.2} ${speechWeight}[mixed];
+        [mixed]acompressor=threshold=-20dB:ratio=1.5:attack=50:release=200:makeup=1[out]
       `;
 
       await execAsync(
@@ -520,11 +523,11 @@ export class AudioCombiner {
         threshold,
       });
 
-      // Use standard FFmpeg compressor filters with properly formatted parameters
-      // We'll use two acompressor stages with different settings to achieve appropriate dynamic range control
+      // Use gentler compression to preserve more of the background audio characteristics
+      // We'll use a more conservative approach with the compressor to maintain background presence
       // Note: FFmpeg acompressor ratio must be in range [1-20]
-      const dynamicsFilter = `acompressor=threshold=${threshold}dB:ratio=${compressionRatio}:attack=200:release=1000:makeup=1:knee=2,
-        acompressor=threshold=${threshold - 10}dB:ratio=1:attack=200:release=1000:makeup=1.5:knee=1`;
+      const dynamicsFilter = `acompressor=threshold=${threshold}dB:ratio=${Math.max(1.0, compressionRatio * 0.7)}:attack=300:release=1500:makeup=1:knee=3,
+        acompressor=threshold=${threshold - 10}dB:ratio=1:attack=300:release=1500:makeup=1.2:knee=2`;
 
       console.log("Applying adaptive dynamics matching...");
       await execAsync(
@@ -536,9 +539,10 @@ export class AudioCombiner {
         } -y "${dynamicsMatchedPath}"`
       );
 
-      // STAGE 3: Final loudness normalization to match original exactly
-      // This uses the precise loudnorm filter with the original parameters following FFmpeg documentation
-      const loudnessFilter = `loudnorm=I=${targetLufs}:TP=${targetPeak}:LRA=${dynamicRange}:print_format=summary:linear=true:dual_mono=true`;
+      // STAGE 3: Final loudness normalization with adjustments to preserve background
+      // Using a slightly modified loudnorm filter to maintain more of the background audio presence
+      // Increasing the LRA slightly to preserve more dynamic range where background music lives
+      const loudnessFilter = `loudnorm=I=${targetLufs}:TP=${targetPeak}:LRA=${Math.min(20, dynamicRange * 1.2)}:print_format=summary:linear=true:dual_mono=true`;
 
       console.log("Applying final loudness normalization...");
       console.log(

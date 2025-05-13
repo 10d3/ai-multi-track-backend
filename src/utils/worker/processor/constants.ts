@@ -58,9 +58,9 @@ export const FFMPEG_FILTERS = {
 
 // Adjust audio processing constants for better balance
 export const AUDIO_PROCESSING = {
-  // Increase speech weight for better clarity
-  SPEECH_WEIGHT: 1.2,
-  BG_WEIGHT: 0.25,
+  // Balance speech and background for better audibility
+  SPEECH_WEIGHT: 1.0,
+  BG_WEIGHT: 0.6,
   
   // Target loudness levels (in LUFS)
   TARGET_LUFS: -14,  // Less compression for more dynamic range
