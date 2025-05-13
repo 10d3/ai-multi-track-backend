@@ -49,14 +49,12 @@ export class AudioCombiner {
         "silent_bg",
         "wav"
       );
-
+      
       // Create silent audio with EXACT same duration, sample rate and channels
       await execAsync(
-        `ffmpeg -threads 2 -f lavfi -i anullsrc=r=${
-          bgAnalysis.format.sampleRate
-        }:cl=${bgAnalysis.format.channels === 1 ? "mono" : "stereo"} -t ${
-          bgAnalysis.duration
-        } -c:a pcm_s24le "${silentBgPath}"`
+        `ffmpeg -threads 2 -f lavfi -i anullsrc=r=${bgAnalysis.format.sampleRate}:cl=${
+          bgAnalysis.format.channels === 1 ? "mono" : "stereo"
+        } -t ${bgAnalysis.duration} -c:a pcm_s24le "${silentBgPath}"`
       );
 
       // Process each speech segment and prepare filter complex
@@ -64,7 +62,7 @@ export class AudioCombiner {
       let filterComplex = "";
       let mixInputs = "[0:a]"; // Silent background is input 0
       let inputCount = 1;
-
+      
       // First, create processed speech segments with consistent quality
       for (let i = 0; i < speechPaths.length; i++) {
         const segment = transcript[i];
@@ -84,11 +82,11 @@ export class AudioCombiner {
           i,
           bgAnalysis
         );
-
+        
         speechSegmentPaths.push({
           path: processedSpeechPath,
           start: segment.start,
-          end: segment.end,
+          end: segment.end
         });
       }
 
@@ -97,11 +95,9 @@ export class AudioCombiner {
       filterComplex = "";
       for (let i = 0; i < speechSegmentPaths.length; i++) {
         const segment = speechSegmentPaths[i];
-
+        
         // Add each speech input to filter
-        filterComplex += `[${i + 1}:a]adelay=${Math.round(
-          segment.start * 1000
-        )}|${Math.round(segment.start * 1000)}[speech${i}];`;
+        filterComplex += `[${i+1}:a]adelay=${Math.round(segment.start * 1000)}|${Math.round(segment.start * 1000)}[speech${i}];`;
       }
 
       // Build mix chain
@@ -111,28 +107,30 @@ export class AudioCombiner {
           filterComplex += `[speech${i}]`;
         }
         // Mix all speech segments with silent background
-        filterComplex += `amix=inputs=${
-          speechSegmentPaths.length + 1
-        }:duration=first[speechmix];`;
+        filterComplex += `amix=inputs=${speechSegmentPaths.length + 1}:duration=first[speechmix];`;
       }
 
       // Add original background with volume control
-      filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=0.7[bg];`;
-
+      filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=0.6[bg];`;
+      
       // Final mix of speech and background
-      filterComplex += `[speechmix][bg]amix=inputs=2:duration=first[premix];`;
-
-      // Final processing without changing duration
-      filterComplex += `[premix]highpass=f=80,lowpass=f=12000,compand=attacks=0.05:decays=0.5:points=-40/-40|-30/-30|-20/-20|-10/-10|0/-8|20/-8:soft-knee=6:gain=2[out]`;
+      filterComplex += `[speechmix][bg]amix=inputs=2:weights=1.5 0.8:duration=first[premix];`;
+      
+      // Final processing without changing duration - enhance speech frequencies further
+      filterComplex += `[premix]highpass=f=80,lowpass=f=12000,
+                       equalizer=f=250:width_type=o:width=1:gain=1.5,
+                       equalizer=f=1000:width_type=o:width=1:gain=2,
+                       equalizer=f=2000:width_type=o:width=1:gain=1.5,
+                       compand=attacks=0.05:decays=0.5:points=-40/-40|-30/-30|-20/-18|-10/-9|0/-7|20/-7:soft-knee=6:gain=2[out]`;
 
       // Create input arguments string for ffmpeg
       let inputArgs = `-threads 2 -i "${silentBgPath}" `;
-
+      
       // Add all processed speech segments
       for (let i = 0; i < speechSegmentPaths.length; i++) {
         inputArgs += `-i "${speechSegmentPaths[i].path}" `;
       }
-
+      
       // Add original background track
       inputArgs += `-i "${backgroundPath}" `;
 
@@ -144,12 +142,7 @@ export class AudioCombiner {
 
       // Execute ffmpeg with single filter complex that preserves exact duration
       await execAsync(
-        `ffmpeg ${inputArgs} -filter_complex "${filterComplex.replace(
-          /\s+/g,
-          " "
-        )}" -map "[out]" -c:a pcm_s24le -ar ${
-          bgAnalysis.format.sampleRate
-        } -ac ${bgAnalysis.format.channels} "${finalPath}"`
+        `ffmpeg ${inputArgs} -filter_complex "${filterComplex.replace(/\s+/g, " ")}" -map "[out]" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${finalPath}"`
       );
 
       // Verify the output file
@@ -160,9 +153,7 @@ export class AudioCombiner {
       console.log("Final audio validation:", {
         originalDuration: bgAnalysis.duration.toFixed(3) + "s",
         finalDuration: finalAnalysis.duration.toFixed(3) + "s",
-        difference:
-          Math.abs(bgAnalysis.duration - finalAnalysis.duration).toFixed(3) +
-          "s",
+        difference: Math.abs(bgAnalysis.duration - finalAnalysis.duration).toFixed(3) + "s"
       });
 
       // Apply final spectral matching to ensure consistent quality for all segments
@@ -186,43 +177,65 @@ export class AudioCombiner {
   ): Promise<string> {
     try {
       console.log(`Processing speech file ${index} for consistent quality...`);
-
+      
       // Create a processed speech file path
-      const processedPath = path.join(
-        outputDir,
-        `processed_speech_${index}.wav`
-      );
-
+      const processedPath = path.join(outputDir, `processed_speech_${index}.wav`);
+      
       // Analyze the speech file
       const speechAnalysis = await this.audioAnalyzer.analyzeAudio(speechPath);
-
+      console.log(`Speech file ${index} analysis:`, {
+        loudness: speechAnalysis.loudness.integrated.toFixed(2) + " LUFS",
+        peak: speechAnalysis.loudness.truePeak.toFixed(2) + " dB"
+      });
+      
+      // Calculate volume boost needed - we want speech to be prominently audible
+      // Target around -16 to -14 LUFS for speech which is good for clarity
+      const targetSpeechLUFS = -15;
+      const volumeBoost = Math.min(4.0, Math.max(1.0, 
+        (speechAnalysis.loudness.integrated < -24) ? 3.0 :
+        (speechAnalysis.loudness.integrated < -20) ? 2.5 : 
+        (speechAnalysis.loudness.integrated < -16) ? 2.0 : 1.5
+      ));
+      
+      console.log(`Speech ${index} volume boost: ${volumeBoost.toFixed(1)}x`);
+      
       // Calculate optimal speech enhancement parameters
       // Use same parameters for all segments to ensure consistency
-      const channelLayout =
-        bgAnalysis.format.channels === 1 ? "mono" : "stereo";
-
+      const channelLayout = bgAnalysis.format.channels === 1 ? "mono" : "stereo";
+      
       // Create a consistent processing filter chain for all speech files
       // This ensures all speeches have same spectral characteristics
+      // Significantly increased speech volume and enhanced speech frequencies
       const speechFilter = `
         aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout},
         highpass=f=70,lowpass=f=12000,
         equalizer=f=125:width_type=o:width=1:gain=1,
-        equalizer=f=250:width_type=o:width=1:gain=2,
-        equalizer=f=1000:width_type=o:width=1:gain=3,
-        equalizer=f=4000:width_type=o:width=1:gain=1.5,
-        equalizer=f=8000:width_type=o:width=1:gain=-1,
-        compand=attacks=0.01:decays=0.2:points=-40/-40|-30/-30|-20/-20|-10/-10|0/-8|10/-8:soft-knee=6:gain=2,
-        volume=1.5
+        equalizer=f=250:width_type=o:width=1:gain=3,
+        equalizer=f=500:width_type=o:width=1:gain=3.5,
+        equalizer=f=1000:width_type=o:width=1:gain=4,
+        equalizer=f=2000:width_type=o:width=1:gain=3.5,
+        equalizer=f=4000:width_type=o:width=1:gain=2,
+        equalizer=f=8000:width_type=o:width=1:gain=-0.5,
+        compand=attacks=0.01:decays=0.2:points=-40/-40|-30/-30|-20/-16|-10/-8|0/-6|10/-6:soft-knee=6:gain=2,
+        volume=${volumeBoost}
       `.replace(/\s+/g, " ");
-
+      
       // Process the speech file with consistent enhancement parameters
       await execAsync(
         `ffmpeg -threads 2 -i "${speechPath}" -af "${speechFilter}" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${processedPath}"`
       );
-
+      
       // Verify the output file
       await this.fileProcessor.verifyFile(processedPath);
-
+      
+      // Analyze the processed speech to confirm loudness improvement
+      const processedAnalysis = await this.audioAnalyzer.analyzeAudio(processedPath);
+      console.log(`Processed speech ${index} loudness:`, {
+        before: speechAnalysis.loudness.integrated.toFixed(2) + " LUFS",
+        after: processedAnalysis.loudness.integrated.toFixed(2) + " LUFS",
+        improvement: (processedAnalysis.loudness.integrated - speechAnalysis.loudness.integrated).toFixed(2) + " LUFS"
+      });
+      
       return processedPath;
     } catch (error) {
       console.error(`Error processing speech file ${index}:`, error);
@@ -236,54 +249,71 @@ export class AudioCombiner {
   ): Promise<string> {
     try {
       console.log("Applying final consistent processing...");
-
+      
       // Create an output path
       const outputPath = await this.fileProcessor.createTempPath(
         "final_processed",
         "wav"
       );
-
+      
       // Extract target parameters from original analysis
       const targetLufs = originalAnalysis.loudness.integrated;
-      const targetPeak = Math.max(
-        -9,
-        Math.min(-0.5, originalAnalysis.loudness.truePeak)
-      );
-      const channelLayout =
-        originalAnalysis.format.channels === 1 ? "mono" : "stereo";
-
+      const targetPeak = Math.max(-9, Math.min(-0.5, originalAnalysis.loudness.truePeak));
+      const channelLayout = originalAnalysis.format.channels === 1 ? "mono" : "stereo";
+      
+      // First analyze the current speech-to-music balance
+      console.log("Analyzing speech-to-music balance in final mix...");
+      const finalMixAnalysis = await this.audioAnalyzer.analyzeAudio(inputPath);
+      
+      // Analyze speech frequency presence (approximate check)
+      let speechPresenceBoost = 1.0;
+      
+      try {
+        // Simple check - if loudness is too low, boost speech frequencies
+        if (finalMixAnalysis.loudness.integrated < -18) {
+          speechPresenceBoost = 1.3;
+        } else if (finalMixAnalysis.loudness.integrated < -16) {
+          speechPresenceBoost = 1.2;
+        } else {
+          speechPresenceBoost = 1.1;
+        }
+        console.log(`Speech presence boost factor: ${speechPresenceBoost.toFixed(1)}`);
+      } catch (err) {
+        console.warn("Speech presence analysis failed, using default boost:", err);
+      }
+      
       // Create a final processing filter that maintains duration exactly
+      // Enhanced to further boost speech frequencies
       const finalFilter = `
         aformat=sample_fmts=fltp:sample_rates=${originalAnalysis.format.sampleRate}:channel_layouts=${channelLayout},
         equalizer=f=125:width_type=o:width=1:gain=0.5,
-        equalizer=f=250:width_type=o:width=1:gain=1,
-        equalizer=f=1000:width_type=o:width=1:gain=1,
-        equalizer=f=4000:width_type=o:width=1:gain=0.5,
-        asoftclip=type=tanh:threshold=0.6,
-        loudnorm=I=${targetLufs}:TP=${targetPeak}:LRA=15:print_format=summary:linear=true:dual_mono=true
+        equalizer=f=250:width_type=o:width=1:gain=${1.5 * speechPresenceBoost},
+        equalizer=f=500:width_type=o:width=1:gain=${2.0 * speechPresenceBoost},
+        equalizer=f=1000:width_type=o:width=1:gain=${2.0 * speechPresenceBoost},
+        equalizer=f=2000:width_type=o:width=1:gain=${1.5 * speechPresenceBoost},
+        equalizer=f=4000:width_type=o:width=1:gain=1.0,
+        asoftclip=type=tanh:threshold=0.7,
+        loudnorm=I=${Math.max(targetLufs, -18)}:TP=${targetPeak}:LRA=15:print_format=summary:linear=true:dual_mono=true
       `.replace(/\s+/g, " ");
-
+      
       // Process the final audio with consistent enhancement parameters
       await execAsync(
         `ffmpeg -threads 2 -i "${inputPath}" -af "${finalFilter}" -c:a pcm_s24le -ar ${originalAnalysis.format.sampleRate} -ac ${originalAnalysis.format.channels} "${outputPath}"`
       );
-
+      
       // Verify the output file
       await this.fileProcessor.verifyFile(outputPath);
-
+      
       // Verify final length matches original background
       const finalAnalysis = await this.audioAnalyzer.analyzeAudio(outputPath);
       console.log("Final processed audio validation:", {
         originalDuration: originalAnalysis.duration.toFixed(3) + "s",
         finalDuration: finalAnalysis.duration.toFixed(3) + "s",
-        difference:
-          Math.abs(originalAnalysis.duration - finalAnalysis.duration).toFixed(
-            3
-          ) + "s",
+        difference: Math.abs(originalAnalysis.duration - finalAnalysis.duration).toFixed(3) + "s",
         lufs: finalAnalysis.loudness.integrated.toFixed(2) + " LUFS",
-        peak: finalAnalysis.loudness.truePeak.toFixed(2) + " dB",
+        peak: finalAnalysis.loudness.truePeak.toFixed(2) + " dB"
       });
-
+      
       return outputPath;
     } catch (error) {
       console.error("Error applying final processing:", error);
