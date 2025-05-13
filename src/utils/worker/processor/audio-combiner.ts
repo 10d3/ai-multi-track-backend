@@ -457,19 +457,20 @@ export class AudioCombiner {
 
       // STAGE 1: Match spectral characteristics with adaptive EQ based on analysis
       // This uses a multi-band equalizer with adjustments based on spectral analysis
+      // Following FFmpeg documentation for proper filter syntax
       const spectralFilter = `aformat=sample_fmts=fltp:sample_rates=${
         originalAnalysis.format.sampleRate
       }:channel_layouts=${channelLayout},
-        equalizer=f=32:t=q:w=1:g=${bassDiff * 0.8},
-        equalizer=f=64:t=q:w=1:g=${bassDiff * 0.9},
-        equalizer=f=125:t=q:w=1:g=${bassDiff},
-        equalizer=f=250:t=q:w=1:g=${bassDiff * 0.7 + midDiff * 0.3},
-        equalizer=f=500:t=q:w=1:g=${bassDiff * 0.3 + midDiff * 0.7},
-        equalizer=f=1000:t=q:w=1:g=${midDiff},
-        equalizer=f=2000:t=q:w=1:g=${midDiff * 0.7 + highDiff * 0.3},
-        equalizer=f=4000:t=q:w=1:g=${midDiff * 0.3 + highDiff * 0.7},
-        equalizer=f=8000:t=q:w=1:g=${highDiff},
-        equalizer=f=16000:t=q:w=1:g=${highDiff * 0.9}`;
+        equalizer=f=32:width_type=q:width=1:gain=${bassDiff * 0.8},
+        equalizer=f=64:width_type=q:width=1:gain=${bassDiff * 0.9},
+        equalizer=f=125:width_type=q:width=1:gain=${bassDiff},
+        equalizer=f=250:width_type=q:width=1:gain=${bassDiff * 0.7 + midDiff * 0.3},
+        equalizer=f=500:width_type=q:width=1:gain=${bassDiff * 0.3 + midDiff * 0.7},
+        equalizer=f=1000:width_type=q:width=1:gain=${midDiff},
+        equalizer=f=2000:width_type=q:width=1:gain=${midDiff * 0.7 + highDiff * 0.3},
+        equalizer=f=4000:width_type=q:width=1:gain=${midDiff * 0.3 + highDiff * 0.7},
+        equalizer=f=8000:width_type=q:width=1:gain=${highDiff},
+        equalizer=f=16000:width_type=q:width=1:gain=${highDiff * 0.9}`;
 
       console.log("Applying adaptive spectral matching...");
       await execAsync(
@@ -519,10 +520,10 @@ export class AudioCombiner {
         threshold,
       });
 
-      const dynamicsFilter = `acompressor=threshold=${threshold}dB:ratio=${compressionRatio}:attack=200:release=1000:makeup=1,
-        aexpand=threshold=${
-          threshold - 10
-        }dB:ratio=1.5:attack=200:release=1000`;
+      // Use standard FFmpeg compressor filters with properly formatted parameters
+      // We'll use two acompressor stages with different settings to achieve appropriate dynamic range control
+      const dynamicsFilter = `acompressor=threshold=${threshold}dB:ratio=${compressionRatio}:attack=200:release=1000:makeup=1:knee=2,
+        acompressor=threshold=${threshold - 10}dB:ratio=0.5:attack=200:release=1000:makeup=1.5:knee=1`;
 
       console.log("Applying adaptive dynamics matching...");
       await execAsync(
@@ -535,8 +536,8 @@ export class AudioCombiner {
       );
 
       // STAGE 3: Final loudness normalization to match original exactly
-      // This uses the precise loudnorm filter with the original parameters
-      const loudnessFilter = `loudnorm=I=${targetLufs}:TP=${targetPeak}:LRA=${dynamicRange}:print_format=summary`;
+      // This uses the precise loudnorm filter with the original parameters following FFmpeg documentation
+      const loudnessFilter = `loudnorm=I=${targetLufs}:TP=${targetPeak}:LRA=${dynamicRange}:print_format=summary:linear=true:dual_mono=true`;
 
       console.log("Applying final loudness normalization...");
       console.log(
