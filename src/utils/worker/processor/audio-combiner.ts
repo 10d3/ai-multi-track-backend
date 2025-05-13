@@ -522,8 +522,9 @@ export class AudioCombiner {
 
       // Use standard FFmpeg compressor filters with properly formatted parameters
       // We'll use two acompressor stages with different settings to achieve appropriate dynamic range control
+      // Note: FFmpeg acompressor ratio must be in range [1-20]
       const dynamicsFilter = `acompressor=threshold=${threshold}dB:ratio=${compressionRatio}:attack=200:release=1000:makeup=1:knee=2,
-        acompressor=threshold=${threshold - 10}dB:ratio=0.5:attack=200:release=1000:makeup=1.5:knee=1`;
+        acompressor=threshold=${threshold - 10}dB:ratio=1:attack=200:release=1000:makeup=1.5:knee=1`;
 
       console.log("Applying adaptive dynamics matching...");
       await execAsync(
