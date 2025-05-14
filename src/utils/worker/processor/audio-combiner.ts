@@ -116,14 +116,14 @@ export class AudioCombiner {
         }:duration=first[speechmix];`;
       }
 
-      // Add original background with volume control
-      filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=0.7[bg];`;
+      // Add original background with reduced volume to make speech more prominent
+      filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=0.4[bg];`;
 
       // Final mix of speech and background
       filterComplex += `[speechmix][bg]amix=inputs=2:duration=first[premix];`;
 
-      // Final processing without changing duration
-      filterComplex += `[premix]highpass=f=80,lowpass=f=12000,compand=attacks=0.05:decays=0.5:points=-40/-40|-30/-30|-20/-20|-10/-10|0/-8|20/-8:soft-knee=6:gain=2[out]`;
+      // Final processing without changing duration - enhanced for speech clarity
+      filterComplex += `[premix]highpass=f=80,lowpass=f=12000,compand=attacks=0.03:decays=0.4:points=-40/-40|-30/-30|-20/-18|-10/-8|0/-4|20/-4:soft-knee=6:gain=3[out]`;
 
       // Create input arguments string for ffmpeg
       let inputArgs = `-threads 2 -i "${silentBgPath}" `;
@@ -202,17 +202,21 @@ export class AudioCombiner {
         bgAnalysis.format.channels === 1 ? "mono" : "stereo";
 
       // Create a consistent processing filter chain for all speech files
-      // This ensures all speeches have same spectral characteristics
+      // This ensures all speeches have same spectral characteristics with significantly increased volume
+      // Enhanced speech clarity with stronger mid-range frequencies and smoother transitions
       const speechFilter = `
         aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout},
-        highpass=f=70,lowpass=f=12000,
-        equalizer=f=125:width_type=o:width=1:gain=1,
-        equalizer=f=250:width_type=o:width=1:gain=2,
-        equalizer=f=1000:width_type=o:width=1:gain=3,
-        equalizer=f=4000:width_type=o:width=1:gain=1.5,
-        equalizer=f=8000:width_type=o:width=1:gain=-1,
-        compand=attacks=0.01:decays=0.2:points=-40/-40|-30/-30|-20/-20|-10/-10|0/-8|10/-8:soft-knee=6:gain=2,
-        volume=1.5
+        highpass=f=80,lowpass=f=12000,
+        afade=t=in:st=0:d=0.015,afade=t=out:st=${speechAnalysis.duration-0.015}:d=0.015,
+        equalizer=f=125:width_type=o:width=1:gain=2,
+        equalizer=f=250:width_type=o:width=1:gain=3,
+        equalizer=f=500:width_type=o:width=1:gain=4,
+        equalizer=f=1000:width_type=o:width=1:gain=5,
+        equalizer=f=2000:width_type=o:width=1:gain=4,
+        equalizer=f=4000:width_type=o:width=1:gain=2,
+        equalizer=f=8000:width_type=o:width=1:gain=0,
+        compand=attacks=0.02:decays=0.3:points=-50/-50|-40/-35|-30/-25|-20/-15|-10/-8|0/-4:soft-knee=6:gain=4,
+        volume=3.0
       `.replace(/\s+/g, " ");
 
       // Process the speech file with consistent enhancement parameters
@@ -235,7 +239,7 @@ export class AudioCombiner {
     originalAnalysis: any
   ): Promise<string> {
     try {
-      console.log("Applying final consistent processing...");
+      console.log("Applying final consistent processing with enhanced speech clarity...");
 
       // Create an output path
       const outputPath = await this.fileProcessor.createTempPath(
@@ -243,24 +247,28 @@ export class AudioCombiner {
         "wav"
       );
 
-      // Extract target parameters from original analysis
-      const targetLufs = originalAnalysis.loudness.integrated;
+      // Extract target parameters from original analysis but boost speech frequencies
+      // Use a higher target loudness to ensure speech is clearly audible
+      const targetLufs = Math.max(-18, originalAnalysis.loudness.integrated + 3);
       const targetPeak = Math.max(
-        -9,
-        Math.min(-0.5, originalAnalysis.loudness.truePeak)
+        -6,
+        Math.min(-0.3, originalAnalysis.loudness.truePeak + 2)
       );
       const channelLayout =
         originalAnalysis.format.channels === 1 ? "mono" : "stereo";
 
-      // Create a final processing filter that maintains duration exactly
+      // Create a final processing filter that maintains duration exactly while enhancing speech clarity
       const finalFilter = `
         aformat=sample_fmts=fltp:sample_rates=${originalAnalysis.format.sampleRate}:channel_layouts=${channelLayout},
-        equalizer=f=125:width_type=o:width=1:gain=0.5,
-        equalizer=f=250:width_type=o:width=1:gain=1,
-        equalizer=f=1000:width_type=o:width=1:gain=1,
-        equalizer=f=4000:width_type=o:width=1:gain=0.5,
-        asoftclip=type=tanh:threshold=0.6,
-        loudnorm=I=${targetLufs}:TP=${targetPeak}:LRA=15:print_format=summary:linear=true:dual_mono=true
+        equalizer=f=125:width_type=o:width=1:gain=1,
+        equalizer=f=250:width_type=o:width=1:gain=2,
+        equalizer=f=500:width_type=o:width=1:gain=3,
+        equalizer=f=1000:width_type=o:width=1:gain=4,
+        equalizer=f=2000:width_type=o:width=1:gain=3,
+        equalizer=f=4000:width_type=o:width=1:gain=2,
+        dynaudnorm=f=150:g=15:p=0.55:m=5:s=0,
+        asoftclip=type=tanh:threshold=0.7,
+        loudnorm=I=${targetLufs}:TP=${targetPeak}:LRA=12:print_format=summary:linear=true:dual_mono=true
       `.replace(/\s+/g, " ");
 
       // Process the final audio with consistent enhancement parameters
