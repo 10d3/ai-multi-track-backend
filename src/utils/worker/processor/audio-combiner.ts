@@ -185,7 +185,7 @@ export class AudioCombiner {
     bgAnalysis: any
   ): Promise<string> {
     try {
-      console.log(`Processing speech file ${index} for consistent quality...`);
+      console.log(`Processing speech file ${index} for natural in-room quality...`);
 
       // Create a processed speech file path
       const processedPath = path.join(
@@ -202,21 +202,21 @@ export class AudioCombiner {
         bgAnalysis.format.channels === 1 ? "mono" : "stereo";
 
       // Create a consistent processing filter chain for all speech files
-      // This ensures all speeches have same spectral characteristics with significantly increased volume
-      // Enhanced speech clarity with stronger mid-range frequencies and smoother transitions
+      // This ensures all speeches have natural "in-room" sound with increased volume
+      // Enhanced speech clarity with natural frequency response and ultra-smooth transitions
       const speechFilter = `
         aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout},
-        highpass=f=80,lowpass=f=12000,
-        afade=t=in:st=0:d=0.015,afade=t=out:st=${speechAnalysis.duration-0.015}:d=0.015,
-        equalizer=f=125:width_type=o:width=1:gain=2,
-        equalizer=f=250:width_type=o:width=1:gain=3,
-        equalizer=f=500:width_type=o:width=1:gain=4,
-        equalizer=f=1000:width_type=o:width=1:gain=5,
+        highpass=f=60,lowpass=f=14000,
+        afade=t=in:st=0:d=0.025,afade=t=out:st=${speechAnalysis.duration-0.025}:d=0.025,
+        equalizer=f=125:width_type=o:width=1:gain=1.5,
+        equalizer=f=250:width_type=o:width=1:gain=2.5,
+        equalizer=f=500:width_type=o:width=1:gain=3.5,
+        equalizer=f=1000:width_type=o:width=1:gain=4.5,
         equalizer=f=2000:width_type=o:width=1:gain=4,
-        equalizer=f=4000:width_type=o:width=1:gain=2,
-        equalizer=f=8000:width_type=o:width=1:gain=0,
-        compand=attacks=0.02:decays=0.3:points=-50/-50|-40/-35|-30/-25|-20/-15|-10/-8|0/-4:soft-knee=6:gain=4,
-        volume=3.0
+        equalizer=f=4000:width_type=o:width=1:gain=2.5,
+        equalizer=f=8000:width_type=o:width=1:gain=1,
+        compand=attacks=0.05:decays=0.5:points=-60/-60|-50/-50|-40/-35|-30/-22|-20/-12|-10/-6|0/-3:soft-knee=6:gain=5,
+        volume=4.0
       `.replace(/\s+/g, " ");
 
       // Process the speech file with consistent enhancement parameters
