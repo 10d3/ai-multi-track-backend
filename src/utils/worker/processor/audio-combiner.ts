@@ -61,9 +61,6 @@ export class AudioCombiner {
 
       // Process each speech segment and prepare filter complex
       const speechSegmentPaths = [];
-      let filterComplex = "";
-      let mixInputs = "[0:a]"; // Silent background is input 0
-      let inputCount = 1;
 
       // First, create processed speech segments with consistent quality
       for (let i = 0; i < speechPaths.length; i++) {
@@ -92,9 +89,12 @@ export class AudioCombiner {
         });
       }
 
+      // Sort speech segments by start time to ensure chronological positioning
+      speechSegmentPaths.sort((a, b) => a.start - b.start);
+
       // Now build a filter complex to precisely position each speech segment
       // We'll use the silent background as base and overlay each speech at exact position
-      filterComplex = "";
+      let filterComplex = "";
       for (let i = 0; i < speechSegmentPaths.length; i++) {
         const segment = speechSegmentPaths[i];
 
@@ -128,7 +128,7 @@ export class AudioCombiner {
       // Create input arguments string for ffmpeg
       let inputArgs = `-threads 2 -i "${silentBgPath}" `;
 
-      // Add all processed speech segments
+      // Add all processed speech segments IN THE SORTED ORDER
       for (let i = 0; i < speechSegmentPaths.length; i++) {
         inputArgs += `-i "${speechSegmentPaths[i].path}" `;
       }
