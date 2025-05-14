@@ -1,3 +1,4 @@
+
 import { promisify } from "util";
 import { exec } from "child_process";
 import path from "path";
@@ -98,7 +99,7 @@ export class AudioCombiner {
       for (let i = 0; i < speechSegmentPaths.length; i++) {
         const segment = speechSegmentPaths[i];
 
-        // Add each speech input to filter
+        // Add each speech input to filter - with volume already boosted
         filterComplex += `[${i + 1}:a]adelay=${Math.round(
           segment.start * 1000
         )}|${Math.round(segment.start * 1000)}[speech${i}];`;
@@ -116,11 +117,12 @@ export class AudioCombiner {
         }:duration=first[speechmix];`;
       }
 
-      // Add original background with slightly reduced volume
-      filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=0.6[bg];`;
+      // Reduce background volume significantly to make speech more prominent
+      filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=0.3[bg];`;
 
-      // Final mix of speech and background - no additional processing
+      // Final mix of speech and background - with speech prominence
       filterComplex += `[speechmix][bg]amix=inputs=2:duration=first[out]`;
+
 
 
       // Create input arguments string for ffmpeg
@@ -183,7 +185,7 @@ export class AudioCombiner {
     bgAnalysis: any
   ): Promise<string> {
     try {
-      console.log(`Processing speech file ${index} (minimal processing)...`);
+      console.log(`Processing speech file ${index} (boosting volume)...`);
 
       // Create a processed speech file path
       const processedPath = path.join(
@@ -191,17 +193,17 @@ export class AudioCombiner {
         `processed_speech_${index}.wav`
       );
 
-      // Only apply minimal processing to ensure compatible format
-      // Just convert to the right sample rate and channels without filters
+      // Apply format conversion and volume boost
       const channelLayout =
         bgAnalysis.format.channels === 1 ? "mono" : "stereo";
 
-      // Simple format conversion without filters
-      const simpleFilter = `aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout}`;
+      // Apply significant volume boost to make speech clearly audible
+      // Using volume=3.0 for triple the volume
+      const boostFilter = `aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout},volume=3.0`;
 
-      // Process the speech file with minimal processing - just format conversion
+      // Process the speech file with volume boost
       await execAsync(
-        `ffmpeg -threads 2 -i "${speechPath}" -af "${simpleFilter}" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${processedPath}"`
+        `ffmpeg -threads 2 -i "${speechPath}" -af "${boostFilter}" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${processedPath}"`
       );
 
       // Verify the output file
@@ -219,7 +221,7 @@ export class AudioCombiner {
     originalAnalysis: any
   ): Promise<string> {
     try {
-      console.log("Applying minimal final processing...");
+      console.log("Applying final processing with speech volume emphasis...");
 
       // Create an output path
       const outputPath = await this.fileProcessor.createTempPath(
@@ -231,13 +233,14 @@ export class AudioCombiner {
       const channelLayout =
         originalAnalysis.format.channels === 1 ? "mono" : "stereo";
 
-      // Very minimal processing - just basic normalization without filters
-      // This will ensure speech is audible without distortion
-      const minimalFilter = `aformat=sample_fmts=fltp:sample_rates=${originalAnalysis.format.sampleRate}:channel_layouts=${channelLayout}`;
+      // Final processing to ensure speech is audible
+      // Simple dynamic range compression to bring up speech volume 
+      const finalFilter = `aformat=sample_fmts=fltp:sample_rates=${originalAnalysis.format.sampleRate}:channel_layouts=${channelLayout},
+      compand=attacks=0.01:decays=0.2:points=-80/-80|-50/-25|-30/-15|-5/-5|0/-2:soft-knee=2:gain=6`;
 
-      // Process the final audio with minimal enhancement
+      // Process the final audio with volume enhancement
       await execAsync(
-        `ffmpeg -threads 2 -i "${inputPath}" -af "${minimalFilter}" -c:a pcm_s24le -ar ${originalAnalysis.format.sampleRate} -ac ${originalAnalysis.format.channels} "${outputPath}"`
+        `ffmpeg -threads 2 -i "${inputPath}" -af "${finalFilter}" -c:a pcm_s24le -ar ${originalAnalysis.format.sampleRate} -ac ${originalAnalysis.format.channels} "${outputPath}"`
       );
 
       // Verify the output file
