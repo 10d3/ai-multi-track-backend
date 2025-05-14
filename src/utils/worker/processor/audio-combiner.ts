@@ -44,13 +44,13 @@ export class AudioCombiner {
         "combined_segments"
       );
 
-      // Improved approach: Create a complete silent background track first
+      // Create a silent background track with same characteristics
       const silentBgPath = await this.fileProcessor.createTempPath(
         "silent_bg",
         "wav"
       );
 
-      // Create silent audio with EXACT same duration, sample rate and channels
+      // Create silent audio with exact same duration, sample rate and channels
       await execAsync(
         `ffmpeg -threads 2 -f lavfi -i anullsrc=r=${
           bgAnalysis.format.sampleRate
@@ -59,13 +59,11 @@ export class AudioCombiner {
         } -c:a pcm_s24le "${silentBgPath}"`
       );
 
-      // Process each speech segment and prepare filter complex
+      // Process each speech segment
       const speechSegmentPaths = [];
       let filterComplex = "";
-      let mixInputs = "[0:a]"; // Silent background is input 0
-      let inputCount = 1;
 
-      // First, create processed speech segments with consistent quality
+      // Process speech segments with improved volume handling
       for (let i = 0; i < speechPaths.length; i++) {
         const segment = transcript[i];
         if (
@@ -77,8 +75,8 @@ export class AudioCombiner {
           continue;
         }
 
-        // Process each speech file to ensure consistent quality
-        const processedSpeechPath = await this.processSpeechForConsistency(
+        // Process each speech file with enhanced volume and smoother transitions
+        const processedSpeechPath = await this.processSpeechWithEnhancedVolume(
           speechPaths[i],
           outputDir,
           i,
@@ -92,19 +90,20 @@ export class AudioCombiner {
         });
       }
 
-      // Now build a filter complex to precisely position each speech segment
-      // We'll use the silent background as base and overlay each speech at exact position
+      // Build filter complex with improved overlays
       filterComplex = "";
       for (let i = 0; i < speechSegmentPaths.length; i++) {
         const segment = speechSegmentPaths[i];
 
-        // Add each speech input to filter
-        filterComplex += `[${i + 1}:a]adelay=${Math.round(
+        // Add each speech input with precise timing and fade edges to avoid abrupt cuts
+        filterComplex += `[${i + 1}:a]afade=t=in:st=${segment.start}:d=0.05,afade=t=out:st=${
+          segment.end - 0.05
+        }:d=0.05,adelay=${Math.round(segment.start * 1000)}|${Math.round(
           segment.start * 1000
-        )}|${Math.round(segment.start * 1000)}[speech${i}];`;
+        )}[speech${i}];`;
       }
 
-      // Build mix chain
+      // Build mix chain with appropriate volume levels
       if (speechSegmentPaths.length > 0) {
         filterComplex += `[0:a]`;
         for (let i = 0; i < speechSegmentPaths.length; i++) {
@@ -113,17 +112,19 @@ export class AudioCombiner {
         // Mix all speech segments with silent background
         filterComplex += `amix=inputs=${
           speechSegmentPaths.length + 1
-        }:duration=first[speechmix];`;
+        }:duration=first:normalize=0[speechmix];`;
       }
 
-      // Add original background with reduced volume to make speech more prominent
-      filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=0.5[bg];`;
+      // Add original background with controlled volume
+      filterComplex += `[${
+        speechSegmentPaths.length + 1
+      }:a]volume=0.7[bg];`;
 
-      // Final mix of speech and background
-      filterComplex += `[speechmix][bg]amix=inputs=2:duration=first[premix];`;
+      // Final mix of speech and background with volume balancing
+      filterComplex += `[speechmix][bg]amix=inputs=2:duration=first:weights=3 1[premix];`;
 
-      // Final processing without changing duration - enhanced for speech clarity
-      filterComplex += `[premix]highpass=f=80,lowpass=f=12000,equalizer=f=1000:width_type=q:width=1:gain=2,equalizer=f=2500:width_type=q:width=1:gain=1.5,compand=attacks=0.05:decays=0.5:points=-40/-40|-30/-30|-20/-20|-10/-10|0/-7|20/-7:soft-knee=6:gain=2.5[out]`;
+      // Final processing without changing duration - with smoother loudness control
+      filterComplex += `[premix]highpass=f=80,lowpass=f=12000,dynaudnorm=p=0.95:m=20:s=15:g=5[out]`;
 
       // Create input arguments string for ffmpeg
       let inputArgs = `-threads 2 -i "${silentBgPath}" `;
@@ -142,7 +143,7 @@ export class AudioCombiner {
         "wav"
       );
 
-      // Execute ffmpeg with single filter complex that preserves exact duration
+      // Execute ffmpeg with filter complex
       await execAsync(
         `ffmpeg ${inputArgs} -filter_complex "${filterComplex.replace(
           /\s+/g,
@@ -165,7 +166,7 @@ export class AudioCombiner {
           "s",
       });
 
-      // Apply final spectral matching to ensure consistent quality for all segments
+      // Apply final spectral matching with improved speech clarity
       const processedPath = await this.applyConsistentFinalProcessing(
         finalPath,
         bgAnalysis
@@ -178,14 +179,14 @@ export class AudioCombiner {
     }
   }
 
-  private async processSpeechForConsistency(
+  private async processSpeechWithEnhancedVolume(
     speechPath: string,
     outputDir: string,
     index: number,
     bgAnalysis: any
   ): Promise<string> {
     try {
-      console.log(`Processing speech file ${index} for consistent quality...`);
+      console.log(`Processing speech file ${index} with enhanced volume...`);
 
       // Create a processed speech file path
       const processedPath = path.join(
@@ -196,27 +197,27 @@ export class AudioCombiner {
       // Analyze the speech file
       const speechAnalysis = await this.audioAnalyzer.analyzeAudio(speechPath);
 
-      // Calculate optimal speech enhancement parameters
-      // Use same parameters for all segments to ensure consistency
+      // Calculate target loudness for speech (louder than original)
+      const targetSpeechLUFS = -16; // Boosted speech loudness
       const channelLayout =
         bgAnalysis.format.channels === 1 ? "mono" : "stereo";
 
-      // Create a consistent processing filter chain for all speech files
-      // This ensures all speeches have same spectral characteristics with enhanced volume
+      // Create a speech processing filter with enhanced volume and clarity
+      // This ensures speech is more prominent but still natural
       const speechFilter = `
         aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout},
-        highpass=f=70,lowpass=f=12000,
-        equalizer=f=125:width_type=o:width=1:gain=1.5,
-        equalizer=f=250:width_type=o:width=1:gain=2.5,
-        equalizer=f=1000:width_type=o:width=1:gain=4,
-        equalizer=f=2000:width_type=o:width=1:gain=3,
-        equalizer=f=4000:width_type=o:width=1:gain=2,
-        equalizer=f=8000:width_type=o:width=1:gain=-0.5,
-        compand=attacks=0.01:decays=0.2:points=-40/-40|-30/-30|-20/-20|-10/-10|0/-7|10/-7:soft-knee=6:gain=3,
-        volume=2.2
+        highpass=f=80,lowpass=f=12000,
+        equalizer=f=125:width_type=o:width=1:gain=1,
+        equalizer=f=250:width_type=o:width=1:gain=3,    
+        equalizer=f=1000:width_type=o:width=1:gain=4,   
+        equalizer=f=3000:width_type=o:width=1:gain=3.5, 
+        equalizer=f=6000:width_type=o:width=1:gain=2,
+        compand=attacks=0.02:decays=0.3:points=-40/-40|-30/-30|-20/-20|-10/-8|0/-5:soft-knee=6:gain=2,
+        loudnorm=I=${targetSpeechLUFS}:TP=-1:LRA=7:print_format=summary,
+        volume=2.0
       `.replace(/\s+/g, " ");
 
-      // Process the speech file with consistent enhancement parameters
+      // Process the speech file with enhanced volume
       await execAsync(
         `ffmpeg -threads 2 -i "${speechPath}" -af "${speechFilter}" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${processedPath}"`
       );
@@ -236,7 +237,7 @@ export class AudioCombiner {
     originalAnalysis: any
   ): Promise<string> {
     try {
-      console.log("Applying final consistent processing...");
+      console.log("Applying final consistent processing with speech emphasis...");
 
       // Create an output path
       const outputPath = await this.fileProcessor.createTempPath(
@@ -244,28 +245,24 @@ export class AudioCombiner {
         "wav"
       );
 
-      // Extract target parameters from original analysis
-      const targetLufs = originalAnalysis.loudness.integrated;
-      const targetPeak = Math.max(
-        -9,
-        Math.min(-0.5, originalAnalysis.loudness.truePeak)
-      );
+      // Set target parameters that emphasize speech while maintaining background
+      const targetLufs = -14; // Slightly louder overall for better speech clarity
+      const targetPeak = -1.0; // Safe peak level
       const channelLayout =
         originalAnalysis.format.channels === 1 ? "mono" : "stereo";
 
-      // Create a final processing filter that maintains duration exactly and enhances speech clarity
+      // Final processing with speech emphasis and smooth transitions
       const finalFilter = `
         aformat=sample_fmts=fltp:sample_rates=${originalAnalysis.format.sampleRate}:channel_layouts=${channelLayout},
         equalizer=f=125:width_type=o:width=1:gain=0.5,
-        equalizer=f=250:width_type=o:width=1:gain=1.5,
-        equalizer=f=1000:width_type=o:width=1:gain=2,
-        equalizer=f=2000:width_type=o:width=1:gain=1.5,
-        equalizer=f=4000:width_type=o:width=1:gain=1,
-        asoftclip=type=tanh:threshold=0.7,
-        loudnorm=I=${targetLufs}:TP=${targetPeak}:LRA=15:print_format=summary:linear=true:dual_mono=true
+        equalizer=f=1000:width_type=o:width=1:gain=2,   
+        equalizer=f=3000:width_type=o:width=1:gain=2,   
+        equalizer=f=5000:width_type=o:width=1:gain=1,
+        dynaudnorm=p=0.95:m=20:s=12:g=5,               
+        loudnorm=I=${targetLufs}:TP=${targetPeak}:LRA=10:print_format=summary:linear=true
       `.replace(/\s+/g, " ");
 
-      // Process the final audio with consistent enhancement parameters
+      // Process the final audio with consistent enhancement
       await execAsync(
         `ffmpeg -threads 2 -i "${inputPath}" -af "${finalFilter}" -c:a pcm_s24le -ar ${originalAnalysis.format.sampleRate} -ac ${originalAnalysis.format.channels} "${outputPath}"`
       );
@@ -273,7 +270,7 @@ export class AudioCombiner {
       // Verify the output file
       await this.fileProcessor.verifyFile(outputPath);
 
-      // Verify final length matches original background
+      // Verify final audio
       const finalAnalysis = await this.audioAnalyzer.analyzeAudio(outputPath);
       console.log("Final processed audio validation:", {
         originalDuration: originalAnalysis.duration.toFixed(3) + "s",
