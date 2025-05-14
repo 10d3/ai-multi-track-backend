@@ -116,14 +116,14 @@ export class AudioCombiner {
         }:duration=first[speechmix];`;
       }
 
-      // Add original background with volume control
-      filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=0.7[bg];`;
+      // Add original background with reduced volume to make speech more prominent
+      filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=0.5[bg];`;
 
       // Final mix of speech and background
       filterComplex += `[speechmix][bg]amix=inputs=2:duration=first[premix];`;
 
-      // Final processing without changing duration
-      filterComplex += `[premix]highpass=f=80,lowpass=f=12000,compand=attacks=0.05:decays=0.5:points=-40/-40|-30/-30|-20/-20|-10/-10|0/-8|20/-8:soft-knee=6:gain=2[out]`;
+      // Final processing without changing duration - enhanced for speech clarity
+      filterComplex += `[premix]highpass=f=80,lowpass=f=12000,equalizer=f=1000:width_type=q:width=1:gain=2,equalizer=f=2500:width_type=q:width=1:gain=1.5,compand=attacks=0.05:decays=0.5:points=-40/-40|-30/-30|-20/-20|-10/-10|0/-7|20/-7:soft-knee=6:gain=2.5[out]`;
 
       // Create input arguments string for ffmpeg
       let inputArgs = `-threads 2 -i "${silentBgPath}" `;
@@ -202,17 +202,18 @@ export class AudioCombiner {
         bgAnalysis.format.channels === 1 ? "mono" : "stereo";
 
       // Create a consistent processing filter chain for all speech files
-      // This ensures all speeches have same spectral characteristics
+      // This ensures all speeches have same spectral characteristics with enhanced volume
       const speechFilter = `
         aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout},
         highpass=f=70,lowpass=f=12000,
-        equalizer=f=125:width_type=o:width=1:gain=1,
-        equalizer=f=250:width_type=o:width=1:gain=2,
-        equalizer=f=1000:width_type=o:width=1:gain=3,
-        equalizer=f=4000:width_type=o:width=1:gain=1.5,
-        equalizer=f=8000:width_type=o:width=1:gain=-1,
-        compand=attacks=0.01:decays=0.2:points=-40/-40|-30/-30|-20/-20|-10/-10|0/-8|10/-8:soft-knee=6:gain=2,
-        volume=1.5
+        equalizer=f=125:width_type=o:width=1:gain=1.5,
+        equalizer=f=250:width_type=o:width=1:gain=2.5,
+        equalizer=f=1000:width_type=o:width=1:gain=4,
+        equalizer=f=2000:width_type=o:width=1:gain=3,
+        equalizer=f=4000:width_type=o:width=1:gain=2,
+        equalizer=f=8000:width_type=o:width=1:gain=-0.5,
+        compand=attacks=0.01:decays=0.2:points=-40/-40|-30/-30|-20/-20|-10/-10|0/-7|10/-7:soft-knee=6:gain=3,
+        volume=2.2
       `.replace(/\s+/g, " ");
 
       // Process the speech file with consistent enhancement parameters
@@ -252,14 +253,15 @@ export class AudioCombiner {
       const channelLayout =
         originalAnalysis.format.channels === 1 ? "mono" : "stereo";
 
-      // Create a final processing filter that maintains duration exactly
+      // Create a final processing filter that maintains duration exactly and enhances speech clarity
       const finalFilter = `
         aformat=sample_fmts=fltp:sample_rates=${originalAnalysis.format.sampleRate}:channel_layouts=${channelLayout},
         equalizer=f=125:width_type=o:width=1:gain=0.5,
-        equalizer=f=250:width_type=o:width=1:gain=1,
-        equalizer=f=1000:width_type=o:width=1:gain=1,
-        equalizer=f=4000:width_type=o:width=1:gain=0.5,
-        asoftclip=type=tanh:threshold=0.6,
+        equalizer=f=250:width_type=o:width=1:gain=1.5,
+        equalizer=f=1000:width_type=o:width=1:gain=2,
+        equalizer=f=2000:width_type=o:width=1:gain=1.5,
+        equalizer=f=4000:width_type=o:width=1:gain=1,
+        asoftclip=type=tanh:threshold=0.7,
         loudnorm=I=${targetLufs}:TP=${targetPeak}:LRA=15:print_format=summary:linear=true:dual_mono=true
       `.replace(/\s+/g, " ");
 
