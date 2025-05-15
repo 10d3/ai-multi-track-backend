@@ -42,11 +42,16 @@ export class AudioProcessor {
     await this.fileProcessor.cleanup();
   }
 
-  async processTTSFiles(audioUrls: string[]): Promise<string[]> {
-    const convertedPaths: string[] = [];
+  async processTTSFiles(audioUrls: string[]): Promise<Array<{path: string, start: number, end: number}>> {
+    const convertedPaths: Array<{path: string, start: number, end: number}> = [];
     for (const url of audioUrls) {
       const wavPath = await this.fileProcessor.downloadAndConvertAudio(url);
-      convertedPaths.push(wavPath);
+      // Since we don't have timing information, use default values
+      convertedPaths.push({
+        path: wavPath,
+        start: 0, // Default start time
+        end: 0 // Will be calculated based on audio duration if needed
+      });
     }
     return convertedPaths;
   }
@@ -56,7 +61,7 @@ export class AudioProcessor {
     ttsRequests: TTSRequest[],
     originalAudioUrl?: string,
     language?: string // Add parameter for original audio URL
-  ): Promise<string[]> {
+  ): Promise<Array<{path: string, start: number, end: number}>> {
     // Group requests by speaker to ensure we use the correct reference audio for each speaker
     const mergedData = transcript.map((transcriptItem, index) => {
       const ttsRequest = ttsRequests[index];
@@ -75,7 +80,7 @@ export class AudioProcessor {
     }
 
     // Process each speaker's requests
-    const allResults: string[] = [];
+    const allResults: Array<{path: string, start: number, end: number}> = [];
     for (const speaker in requestsBySpeaker) {
       const speakerRequests = requestsBySpeaker[speaker];
       console.log(
@@ -316,14 +321,14 @@ export class AudioProcessor {
   }
 
   async combineAllSpeechWithBackground(
-    speechFiles: string[],
+    speechFiles: Array<{path: string, start: number, end: number}>,
     backgroundTrack: string,
-    transcript: Transcript[]
+    transcript?: Transcript[]
   ): Promise<string> {
+    // We no longer need to pass transcript since speechFiles already contain timing information
     return this.audioCombiner.combineAudioFiles(
       backgroundTrack,
-      speechFiles,
-      transcript
+      speechFiles
     );
   }
 
