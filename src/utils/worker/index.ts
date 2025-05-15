@@ -14,7 +14,7 @@ const worker = new Worker<JobData>(
     console.log("Processing job:", job.id, job.data);
 
     try {
-      let ttsConvertedPaths: string[] = [];
+      let ttsConvertedPaths = [];
       let totalSteps = 3;
       let completedSteps = 0;
       const startTime = Date.now();
