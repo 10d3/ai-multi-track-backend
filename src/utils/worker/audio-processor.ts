@@ -42,11 +42,20 @@ export class AudioProcessor {
     await this.fileProcessor.cleanup();
   }
 
-  async processTTSFiles(audioUrls: string[]): Promise<string[]> {
-    const convertedPaths: string[] = [];
-    for (const url of audioUrls) {
-      const wavPath = await this.fileProcessor.downloadAndConvertAudio(url);
-      convertedPaths.push(wavPath);
+  async processTTSFiles(audioUrls: string[]): Promise<Array<{path: string; start: number; end: number}>> {
+    const convertedPaths: Array<{path: string; start: number; end: number}> = [];
+    for (let i = 0; i < audioUrls.length; i++) {
+      const wavPath = await this.fileProcessor.downloadAndConvertAudio(audioUrls[i]);
+      // Since we don't have timing information for these files, we'll use sequential timing
+      // Each file starts where the previous one ends (assuming 5 seconds per file as default)
+      const defaultDuration = 5; // seconds
+      const start = i * defaultDuration;
+      const end = start + defaultDuration;
+      convertedPaths.push({
+        path: wavPath,
+        start,
+        end
+      });
     }
     return convertedPaths;
   }
@@ -56,7 +65,7 @@ export class AudioProcessor {
     ttsRequests: TTSRequest[],
     originalAudioUrl?: string,
     language?: string // Add parameter for original audio URL
-  ): Promise<string[]> {
+  ): Promise<Array<{path: string; start: number; end: number}>> {
     // Group requests by speaker to ensure we use the correct reference audio for each speaker
     const mergedData = transcript.map((transcriptItem, index) => {
       const ttsRequest = ttsRequests[index];
@@ -75,7 +84,7 @@ export class AudioProcessor {
     }
 
     // Process each speaker's requests
-    const allResults: string[] = [];
+    const allResults: Array<{path: string; start: number; end: number}> = [];
     for (const speaker in requestsBySpeaker) {
       const speakerRequests = requestsBySpeaker[speaker];
       console.log(
@@ -316,14 +325,13 @@ export class AudioProcessor {
   }
 
   async combineAllSpeechWithBackground(
-    speechFiles: string[],
+    speechSegments: Array<{path: string; start: number; end: number}>,
     backgroundTrack: string,
-    transcript: Transcript[]
+    transcript?: Transcript[]
   ): Promise<string> {
     return this.audioCombiner.combineAudioFiles(
       backgroundTrack,
-      speechFiles,
-      transcript
+      speechSegments
     );
   }
 

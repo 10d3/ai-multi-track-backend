@@ -77,6 +77,8 @@ export const formatTranscreationForWorker = async (
     // Format text as SSML for better TTS results
     const ssmlText = `${t.textTranslated || t.text}`;
     const emotion = t.emotion
+    const start = t.start
+    const end = t.end
 
     // Get voice information from transcript or use defaults
     let voiceName = t.voice || '';
@@ -84,53 +86,6 @@ export const formatTranscreationForWorker = async (
 
     // If no voice specified, select based on speaker characteristics if available
     if (!voiceName && t.metadataTranscript) {
-      // const gender =
-      //   t.metadataTranscript.speakerCharacteristics.gender?.toLowerCase();
-
-      // Filter voices by gender if available
-      // let genderVoices = availableVoices;
-      // if (gender) {
-      //   const genderMap: Record<string, string> = {
-      //     male: "MALE",
-      //     female: "FEMALE",
-      //   };
-
-      //   const ssmlGender = genderMap[gender];
-      //   if (ssmlGender) {
-      //     genderVoices = availableVoices.filter(
-      //       (v) => v.ssmlGender === ssmlGender
-      //     );
-      //   }
-      // }
-
-      // Select a voice if available
-    //   if (genderVoices.length > 0) {
-    //     // Prefer Neural or Wavenet voices if available
-    //     const preferredVoice =
-    //       genderVoices.find(
-    //         (v) => v.name && (v.name.includes("Neural2") || v.name.includes("Wavenet"))
-    //       ) || genderVoices[0];
-
-    //     voiceName = preferredVoice.name || '';
-    //   }
-    // }
-
-    // // If still no voice, use default for language
-    // if (!voiceName) {
-    //   // Default voice mapping based on language
-    //   const defaultVoices: Record<string, string> = {
-    //     "en-US": "en-US-Neural2-F",
-    //     "es-ES": "es-ES-Neural2-A",
-    //     "fr-FR": "fr-FR-Neural2-A",
-    //     "de-DE": "de-DE-Neural2-A",
-    //     // Add more language-to-voice mappings as needed
-    //   };
-
-      // voiceName =
-      //   defaultVoices[languageCode] ||
-      //   (availableVoices.length > 0
-      //     ? (availableVoices[0].name || '')
-      //     : "en-US-Neural2-F");
       voiceName = t.voice ? t.voice : "";
     }
 
@@ -146,7 +101,9 @@ export const formatTranscreationForWorker = async (
       voice_id: voiceId,
       voice_name: voiceName,
       output_format: "MP3",
-      emotion
+      emotion,
+      start,
+      end
     };
   });
 

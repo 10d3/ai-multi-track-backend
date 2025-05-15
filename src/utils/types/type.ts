@@ -19,6 +19,8 @@ export interface JobData {
     voice_id: string;
     output_format?: string;
     voice_name: string;
+    start: number;
+    end: number;
   }>;
   audioUrls?: string[];
   transcript: Transcript[];
@@ -45,6 +47,8 @@ export interface TTSRequest {
   voice_id: string;
   output_format?: string;
   voice_name: string;
+  start: number;
+  end: number;
 }
 
 export interface Emotion{
@@ -65,7 +69,7 @@ export interface Transcript {
   speaker: string
   emotion: any
   voice?: string
-  // voiceId: string
+  ttsFile?: string
 }
 
 export interface JobData {

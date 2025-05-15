@@ -19,17 +19,12 @@ export class AudioCombiner {
 
   async combineAudioFiles(
     backgroundPath: string,
-    speechPaths: string[],
-    transcript: Transcript[]
+    speechSegments: Array<{path: string; start: number; end: number}>,
+    transcript?: Transcript[]
   ): Promise<string> {
     try {
-      if (!backgroundPath || !speechPaths.length) {
+      if (!backgroundPath || !speechSegments.length) {
         throw new Error("Missing required audio files for combination");
-      }
-
-      // Validate that we have transcript data for each speech file
-      if (transcript.length < speechPaths.length) {
-        console.warn(`Warning: Not enough transcript segments (${transcript.length}) for speech files (${speechPaths.length})`);
       }
 
       // First analyze the background audio to get its characteristics
@@ -66,131 +61,62 @@ export class AudioCombiner {
 
       // Process each speech segment and prepare filter complex
       const speechSegmentPaths = [];
-      
-      // First, validate and filter transcript segments to ensure they have valid timestamps
-      const validTranscriptSegments = transcript.filter((segment, index) => {
-        if (!segment || segment.start === undefined || segment.end === undefined) {
-          console.warn(`Invalid transcript data for segment ${index}, skipping`);
-          return false;
+
+      // First, create processed speech segments with consistent quality
+      for (let i = 0; i < speechSegments.length; i++) {
+        const segment = speechSegments[i];
+        if (
+          !segment ||
+          segment.start === undefined ||
+          segment.end === undefined
+        ) {
+          console.warn(`Missing data for speech segment ${i}, skipping`);
+          continue;
         }
-        return true;
-      });
-      
-      console.log(`Processing ${validTranscriptSegments.length} valid transcript segments`);
-      
-      // Ensure we have the right number of speech files for valid transcript segments
-      if (validTranscriptSegments.length > speechPaths.length) {
-        console.warn(`Warning: More valid transcript segments (${validTranscriptSegments.length}) than speech files (${speechPaths.length})`);
-      }
-      
-      // Process each speech file with its corresponding transcript segment
-      // We'll use the minimum of valid transcript segments and speech paths
-      const segmentsToProcess = Math.min(validTranscriptSegments.length, speechPaths.length);
-      
-      // Create a mapping array to track which speech file corresponds to which transcript segment
-      const speechToTranscriptMapping = [];
-      
-      console.log("Creating direct mapping between speech files and transcript segments:");
-      for (let i = 0; i < segmentsToProcess; i++) {
-        const segment = validTranscriptSegments[i];
-        const speechPath = speechPaths[i];
-        
-        console.log(`Mapping: Speech file ${i} -> Transcript segment with start=${segment.start}s, end=${segment.end}s`);
-        
-        // Store the mapping information
-        speechToTranscriptMapping.push({
-          speechIndex: i,
-          transcriptIndex: i,
-          start: segment.start,
-          end: segment.end
-        });
-        
+
         // Process each speech file to ensure consistent quality
         const processedSpeechPath = await this.processSpeechForConsistency(
-          speechPath,
+          segment.path,
           outputDir,
           i,
           bgAnalysis
         );
 
-        // Use the direct mapping approach - each speech file is explicitly linked to its transcript segment
         speechSegmentPaths.push({
           path: processedSpeechPath,
           start: segment.start,
           end: segment.end,
           originalIndex: i, // Store the original index to maintain reference to the correct speech file
-          transcriptIndex: i // Explicitly track which transcript segment this belongs to
         });
       }
-      
-      // Log the explicit mapping for verification
-      console.log("Speech to transcript segment mapping:", 
-        speechToTranscriptMapping.map(mapping => ({
-          speechIndex: mapping.speechIndex,
-          transcriptIndex: mapping.transcriptIndex,
-          start: mapping.start,
-          end: mapping.end
-        }))
-      );
 
-      // Create a copy of the speech segments for chronological reference
-      // But we'll maintain the original order for processing to preserve the speech-to-transcript mapping
-      const chronologicalSegments = [...speechSegmentPaths].sort((a, b) => a.start - b.start);
+      // Sort speech segments by start time to ensure chronological positioning
+      speechSegmentPaths.sort((a, b) => a.start - b.start);
 
-      // Log the chronological order for reference only
+      // Log the sorted segments to verify chronological ordering
       console.log(
-        "Speech segments in chronological order (for reference only):",
-        chronologicalSegments.map((segment) => ({
-          start: segment.start,
-          end: segment.end,
-          duration: (segment.end - segment.start).toFixed(2) + "s",
-          originalIndex: segment.originalIndex,
-          transcriptIndex: segment.transcriptIndex
-        }))
-      );
-      
-      // Log the actual processing order that will be used (preserving direct mapping)
-      console.log(
-        "Speech segments in processing order (preserving direct mapping):",
+        "Speech segments sorted chronologically:",
         speechSegmentPaths.map((segment) => ({
           start: segment.start,
           end: segment.end,
-          duration: (segment.end - segment.start).toFixed(2) + "s",
           originalIndex: segment.originalIndex,
-          transcriptIndex: segment.transcriptIndex
         }))
       );
-      
-      // Validate that segments don't overlap significantly
-      for (let i = 0; i < speechSegmentPaths.length - 1; i++) {
-        const currentSegment = speechSegmentPaths[i];
-        const nextSegment = speechSegmentPaths[i + 1];
-        
-        if (currentSegment.end > nextSegment.start) {
-          const overlap = currentSegment.end - nextSegment.start;
-          console.warn(`Warning: Segments ${i} and ${i+1} overlap by ${overlap.toFixed(2)}s`);
-        }
-      }
 
       // Now build a filter complex to precisely position each speech segment
       // We'll use the silent background as base and overlay each speech at exact position
       let filterComplex = "";
 
-      // Add each speech input to filter with proper delay based on start time from transcript
-      // We're using the direct mapping approach - each speech file is positioned according to its transcript
-      console.log("Building filter complex with direct mapping between speech files and transcript segments:");
+      // Add each speech input to filter with proper delay based on start time
+      // Since we've sorted the segments chronologically, they will be positioned correctly by timestamp
       for (let i = 0; i < speechSegmentPaths.length; i++) {
         const segment = speechSegmentPaths[i];
         const inputIndex = i + 1; // +1 because silent background is input 0
 
-        // Calculate exact delay in milliseconds based on transcript timestamp
-        const delayMs = Math.max(0, Math.round(segment.start * 1000));
-        
-        // Log the exact positioning of each segment with explicit mapping information
-        console.log(`Positioning speech segment ${i} (transcript index ${segment.transcriptIndex}) at ${segment.start}s (delay=${delayMs}ms)`);
-
-        // Add each speech input to filter with precise delay based on transcript timestamp
-        filterComplex += `[${inputIndex}:a]adelay=${delayMs}|${delayMs}[speech${i}];`;
+        // Add each speech input to filter - with volume already boosted and positioned by timestamp
+        filterComplex += `[${inputIndex}:a]adelay=${Math.round(
+          segment.start * 1000
+        )}|${Math.round(segment.start * 1000)}[speech${i}];`;
       }
 
       // Build mix chain
@@ -214,12 +140,9 @@ export class AudioCombiner {
       // Create input arguments string for ffmpeg
       let inputArgs = `-threads 2 -i "${silentBgPath}" `;
 
-      // Add all processed speech segments in the ORIGINAL ORDER to maintain direct mapping
-      console.log("Adding speech segments to ffmpeg command in original mapping order:");
+      // Add all processed speech segments IN THE SORTED ORDER
       for (let i = 0; i < speechSegmentPaths.length; i++) {
-        const segment = speechSegmentPaths[i];
-        console.log(`  Segment ${i}: speech_index=${segment.originalIndex}, transcript_index=${segment.transcriptIndex}, start=${segment.start}s, end=${segment.end}s`);
-        inputArgs += `-i "${segment.path}" `;
+        inputArgs += `-i "${speechSegmentPaths[i].path}" `;
       }
 
       // Add original background track
@@ -259,23 +182,6 @@ export class AudioCombiner {
         finalPath,
         bgAnalysis
       );
-
-      // Final validation to confirm speech segments are properly positioned with direct mapping
-      console.log("Final validation of speech segment positioning and mapping:");
-      console.log("  - Original speech files count:", speechPaths.length);
-      console.log("  - Valid transcript segments count:", validTranscriptSegments.length);
-      console.log("  - Processed segments count:", speechSegmentPaths.length);
-      console.log("  - Direct mapping maintained between speech files and transcript segments");
-      
-      // Verify the direct mapping was maintained
-      console.log("  - Mapping verification:");
-      for (let i = 0; i < speechSegmentPaths.length; i++) {
-        const segment = speechSegmentPaths[i];
-        console.log(`    * Speech file ${segment.originalIndex} -> Transcript segment ${segment.transcriptIndex} (start=${segment.start}s, end=${segment.end}s)`);
-      }
-      
-      console.log("  - Each segment positioned at its exact timestamp from transcript");
-      console.log("  - Final audio duration matches background:", bgAnalysis.duration.toFixed(2) + "s");
 
       return processedPath;
     } catch (error) {

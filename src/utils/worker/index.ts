@@ -14,7 +14,7 @@ const worker = new Worker<JobData>(
     console.log("Processing job:", job.id, job.data);
 
     try {
-      let ttsConvertedPaths: string[] = [];
+      let ttsConvertedPaths: Array<{path: string; start: number; end: number}> = [];
       let totalSteps = 3;
       let completedSteps = 0;
       const startTime = Date.now();
@@ -102,8 +102,7 @@ const worker = new Worker<JobData>(
       const combinedAudioPath =
         await audioProcessor.combineAllSpeechWithBackground(
           ttsConvertedPaths,
-          backgroundTrack,
-          job.data.transcript
+          backgroundTrack
         );
 
       completedSteps++;
