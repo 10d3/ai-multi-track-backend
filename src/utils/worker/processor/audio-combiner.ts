@@ -113,52 +113,36 @@ export class AudioCombiner {
         const segment = speechSegmentPaths[i];
         const inputIndex = i + 1; // +1 because silent background is input 0
 
-        // Calculate precise delay in milliseconds and ensure it's properly formatted
-        // Using Math.max to ensure we don't have negative delays
-        const delayMs = Math.max(0, Math.round(segment.start * 1000));
-        
-        // Add each speech input to filter with precise delay positioning
-        filterComplex += `[${inputIndex}:a]adelay=${delayMs}|${delayMs}[speech${i}];`;
+        // Add each speech input to filter - with volume already boosted and positioned by timestamp
+        filterComplex += `[${inputIndex}:a]adelay=${Math.round(
+          segment.start * 1000
+        )}|${Math.round(segment.start * 1000)}[speech${i}];`;
       }
 
-      // Build mix chain - ensuring chronological order is maintained
+      // Build mix chain
       if (speechSegmentPaths.length > 0) {
         filterComplex += `[0:a]`;
-        
-        // Add speech segments in the same order they were processed with adelay
         for (let i = 0; i < speechSegmentPaths.length; i++) {
           filterComplex += `[speech${i}]`;
         }
-        
         // Mix all speech segments with silent background
-        // Using 'longest' instead of 'first' to ensure all speech is included
         filterComplex += `amix=inputs=${
           speechSegmentPaths.length + 1
-        }:duration=longest:dropout_transition=0[speechmix];`;
-        
-        console.log("Speech segments mixing filter created with inputs in chronological order");
+        }:duration=first[speechmix];`;
       }
 
       // Reduce background volume significantly to make speech more prominent
       filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=0.3[bg];`;
 
       // Final mix of speech and background - with speech prominence
-      // Using 'first' for the final mix to ensure we match the background duration exactly
-      // This is critical to maintain the exact timing of the original background track
-      filterComplex += `[speechmix][bg]amix=inputs=2:duration=first:normalize=0[out]`;
-      
-      console.log("Final filter complex:", filterComplex.replace(/\s+/g, " "));
+      filterComplex += `[speechmix][bg]amix=inputs=2:duration=first[out]`;
 
       // Create input arguments string for ffmpeg
       let inputArgs = `-threads 2 -i "${silentBgPath}" `;
 
       // Add all processed speech segments IN THE SORTED ORDER
-      // This ensures the input order matches the filter complex order
-      console.log("Adding speech segments to FFmpeg command in chronological order:");
       for (let i = 0; i < speechSegmentPaths.length; i++) {
-        const segment = speechSegmentPaths[i];
-        console.log(`  Segment ${i}: start=${segment.start}s, original index=${segment.originalIndex}`);
-        inputArgs += `-i "${segment.path}" `;
+        inputArgs += `-i "${speechSegmentPaths[i].path}" `;
       }
 
       // Add original background track
