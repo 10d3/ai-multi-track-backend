@@ -19,11 +19,11 @@ export class AudioCombiner {
 
   async combineAudioFiles(
     backgroundPath: string,
-    speechSegments: Array<{path: string; start: number; end: number}>,
-    transcript?: Transcript[]
+    speechPaths: string[],
+    transcript: Transcript[]
   ): Promise<string> {
     try {
-      if (!backgroundPath || !speechSegments.length) {
+      if (!backgroundPath || !speechPaths.length) {
         throw new Error("Missing required audio files for combination");
       }
 
@@ -63,20 +63,20 @@ export class AudioCombiner {
       const speechSegmentPaths = [];
 
       // First, create processed speech segments with consistent quality
-      for (let i = 0; i < speechSegments.length; i++) {
-        const segment = speechSegments[i];
+      for (let i = 0; i < speechPaths.length; i++) {
+        const segment = transcript[i];
         if (
           !segment ||
           segment.start === undefined ||
           segment.end === undefined
         ) {
-          console.warn(`Missing data for speech segment ${i}, skipping`);
+          console.warn(`Missing transcript data for segment ${i}, skipping`);
           continue;
         }
 
         // Process each speech file to ensure consistent quality
         const processedSpeechPath = await this.processSpeechForConsistency(
-          segment.path,
+          speechPaths[i],
           outputDir,
           i,
           bgAnalysis

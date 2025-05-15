@@ -552,7 +552,7 @@ export class ZyphraTTS {
   async processZypMultipleTTS(
     ttsRequests: ZyphraTTSRequest[],
     language: string
-  ): Promise<Array<{path: string; start: number; end: number}>> {
+  ): Promise<string[]> {
     console.log(
       `[ZyphraTTS] Processing multiple TTS requests (count: ${
         ttsRequests?.length || 0
@@ -564,7 +564,7 @@ export class ZyphraTTS {
       throw new Error("No TTS requests provided");
     }
 
-    const results: Array<{path: string; start: number; end: number}> = [];
+    const results: string[] = [];
     console.log(`[ZyphraTTS] Processing in batches of ${BATCH_SIZE}`);
 
     for (let i = 0; i < ttsRequests.length; i += BATCH_SIZE) {
@@ -586,17 +586,10 @@ export class ZyphraTTS {
           const batchResults = await Promise.all(
             batch.map(async (request) => {
               try {
-                const audioPath = await this.processZypTTS({
+                return await this.processZypTTS({
                   ...request,
                   language_iso_code: language || request.language_iso_code,
                 });
-                
-                // Return the path along with start and end timestamps
-                return {
-                  path: audioPath,
-                  start: request.start,
-                  end: request.end
-                };
               } catch (error) {
                 console.error(`[ZyphraTTS] Error processing request:`, {
                   text: request.textToSpeech?.substring(0, 50) + "...",
