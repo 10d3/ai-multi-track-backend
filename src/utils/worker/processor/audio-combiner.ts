@@ -1,4 +1,3 @@
-
 import { promisify } from "util";
 import { exec } from "child_process";
 import path from "path";
@@ -87,20 +86,35 @@ export class AudioCombiner {
           path: processedSpeechPath,
           start: segment.start,
           end: segment.end,
+          originalIndex: i, // Store the original index to maintain reference to the correct speech file
         });
       }
 
       // Sort speech segments by start time to ensure chronological positioning
       speechSegmentPaths.sort((a, b) => a.start - b.start);
 
+      // Log the sorted segments to verify chronological ordering
+      console.log(
+        "Speech segments sorted chronologically:",
+        speechSegmentPaths.map((segment) => ({
+          start: segment.start,
+          end: segment.end,
+          originalIndex: segment.originalIndex,
+        }))
+      );
+
       // Now build a filter complex to precisely position each speech segment
       // We'll use the silent background as base and overlay each speech at exact position
       let filterComplex = "";
+
+      // Add each speech input to filter with proper delay based on start time
+      // Since we've sorted the segments chronologically, they will be positioned correctly by timestamp
       for (let i = 0; i < speechSegmentPaths.length; i++) {
         const segment = speechSegmentPaths[i];
+        const inputIndex = i + 1; // +1 because silent background is input 0
 
-        // Add each speech input to filter - with volume already boosted
-        filterComplex += `[${i + 1}:a]adelay=${Math.round(
+        // Add each speech input to filter - with volume already boosted and positioned by timestamp
+        filterComplex += `[${inputIndex}:a]adelay=${Math.round(
           segment.start * 1000
         )}|${Math.round(segment.start * 1000)}[speech${i}];`;
       }
@@ -122,8 +136,6 @@ export class AudioCombiner {
 
       // Final mix of speech and background - with speech prominence
       filterComplex += `[speechmix][bg]amix=inputs=2:duration=first[out]`;
-
-
 
       // Create input arguments string for ffmpeg
       let inputArgs = `-threads 2 -i "${silentBgPath}" `;
@@ -234,7 +246,7 @@ export class AudioCombiner {
         originalAnalysis.format.channels === 1 ? "mono" : "stereo";
 
       // Final processing to ensure speech is audible
-      // Simple dynamic range compression to bring up speech volume 
+      // Simple dynamic range compression to bring up speech volume
       const finalFilter = `aformat=sample_fmts=fltp:sample_rates=${originalAnalysis.format.sampleRate}:channel_layouts=${channelLayout},
       compand=attacks=0.01:decays=0.2:points=-80/-80|-50/-25|-30/-15|-5/-5|0/-2:soft-knee=2:gain=6`;
 
