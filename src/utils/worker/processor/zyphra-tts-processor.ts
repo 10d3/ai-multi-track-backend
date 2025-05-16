@@ -591,12 +591,12 @@ export class ZyphraTTS {
                   language_iso_code: language || request.language_iso_code,
                 });
                 
-                // Return object with file path and timing information
-                // return {
-                //   path: filePath,
-                //   start: request.start,
-                //   end: request.end
-                // };
+                // Apply hybrid duration adjustment if start and end times are provided
+                if (request.start !== undefined && request.end !== undefined) {
+                  const adjustedPath = await this.adjustAudioDuration(filePath, request.start, request.end);
+                  return adjustedPath;
+                }
+                
                 return filePath;
               } catch (error) {
                 console.error(`[ZyphraTTS] Error processing request:`, {
@@ -659,5 +659,82 @@ export class ZyphraTTS {
       `[ZyphraTTS] All TTS requests processed successfully (total: ${results.length})`
     );
     return results;
+  }
+
+  /**
+   * Adjusts the duration of a TTS-generated audio file to match the original segment duration
+   * using a hybrid approach: time stretching for small differences and silence padding for larger ones
+   * @param audioPath Path to the TTS-generated audio file
+   * @param startTime Original segment start time in seconds
+   * @param endTime Original segment end time in seconds
+   * @returns Path to the duration-adjusted audio file
+   */
+  private async adjustAudioDuration(audioPath: string, startTime: number, endTime: number): Promise<string> {
+    try {
+      // Calculate the target duration from the original segment
+      const targetDuration = endTime - startTime;
+      
+      // Get the current duration of the TTS audio
+      const currentDuration = await this.fileProcessor.getAudioDuration(audioPath);
+      
+      console.log(`[ZyphraTTS] Adjusting audio duration: Current=${currentDuration.toFixed(2)}s, Target=${targetDuration.toFixed(2)}s`);
+      
+      // If durations are already very close (within 0.1s), no adjustment needed
+      if (Math.abs(currentDuration - targetDuration) < 0.1) {
+        console.log(`[ZyphraTTS] Audio duration already matches target (difference < 0.1s)`);
+        return audioPath;
+      }
+      
+      // Calculate the duration ratio
+      const durationRatio = targetDuration / currentDuration;
+      
+      // Create a new file path for the adjusted audio
+      const adjustedPath = await this.fileProcessor.createTempPath("adjusted_tts", "wav");
+      
+      // HYBRID APPROACH:
+      // 1. Use time stretching for small duration differences (within 30%)
+      // 2. Use silence padding or trimming for larger differences
+      
+      if (durationRatio >= 0.7 && durationRatio <= 1.3) {
+        // Small difference: Use time stretching with ATEMPO filter
+        // ATEMPO has a range limitation of 0.5 to 2.0, but we're only using 0.7 to 1.3
+        console.log(`[ZyphraTTS] Using time stretching with ratio: ${durationRatio.toFixed(2)}`);
+        
+        await execAsync(
+          `ffmpeg -i "${audioPath}" -filter:a "atempo=${durationRatio}" -c:a pcm_s16le "${adjustedPath}"`
+        );
+      } else {
+        // Large difference: Use silence padding or trimming
+        if (durationRatio > 1) {
+          // Need to extend: Add silence to the end
+          const silenceDuration = targetDuration - currentDuration;
+          console.log(`[ZyphraTTS] Adding ${silenceDuration.toFixed(2)}s of silence padding`);
+          
+          await execAsync(
+            `ffmpeg -i "${audioPath}" -af "apad=pad_dur=${silenceDuration}" -c:a pcm_s16le "${adjustedPath}"`
+          );
+        } else {
+          // Need to trim: Keep as much of the speech as possible
+          console.log(`[ZyphraTTS] Trimming audio to ${targetDuration.toFixed(2)}s`);
+          
+          await execAsync(
+            `ffmpeg -i "${audioPath}" -t ${targetDuration} -c:a pcm_s16le "${adjustedPath}"`
+          );
+        }
+      }
+      
+      // Verify the adjusted file
+      await this.fileProcessor.verifyFile(adjustedPath);
+      
+      // Get and log the final duration to verify adjustment
+      const finalDuration = await this.fileProcessor.getAudioDuration(adjustedPath);
+      console.log(`[ZyphraTTS] Audio duration adjustment complete: Final=${finalDuration.toFixed(2)}s (Target=${targetDuration.toFixed(2)}s)`);
+      
+      return adjustedPath;
+    } catch (error) {
+      console.error(`[ZyphraTTS] Error adjusting audio duration:`, error);
+      // Return the original file if adjustment fails
+      return audioPath;
+    }
   }
 }
