@@ -102,7 +102,8 @@ const worker = new Worker<JobData>(
       const combinedAudioPath =
         await audioProcessor.combineAllSpeechWithBackground(
           ttsConvertedPaths,
-          backgroundTrack
+          backgroundTrack,
+          job.data.transcript
         );
 
       completedSteps++;
