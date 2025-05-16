@@ -42,15 +42,11 @@ export class AudioProcessor {
     await this.fileProcessor.cleanup();
   }
 
-  async processTTSFiles(audioUrls: string[]): Promise<Array<{path: string; start: number; end: number}>> {
-    const convertedPaths: Array<{path: string; start: number; end: number}> = [];
+  async processTTSFiles(audioUrls: string[]): Promise<string[]> {
+    const convertedPaths: string[] = [];
     for (const url of audioUrls) {
       const wavPath = await this.fileProcessor.downloadAndConvertAudio(url);
-      convertedPaths.push({
-        path: wavPath,
-        start: 0, // Default start time
-        end: 0    // Default end time
-      });
+      convertedPaths.push(wavPath);
     }
     return convertedPaths;
   }
@@ -60,7 +56,7 @@ export class AudioProcessor {
     ttsRequests: TTSRequest[],
     originalAudioUrl?: string,
     language?: string // Add parameter for original audio URL
-  ): Promise<Array<{path: string; start: number; end: number}>> {
+  ): Promise<string[]> {
     // Group requests by speaker to ensure we use the correct reference audio for each speaker
     const mergedData = transcript.map((transcriptItem, index) => {
       const ttsRequest = ttsRequests[index];
@@ -79,7 +75,7 @@ export class AudioProcessor {
     }
 
     // Process each speaker's requests
-    const allResults: Array<{path: string; start: number; end: number}> = [];
+    const allResults: string[] = [];
     for (const speaker in requestsBySpeaker) {
       const speakerRequests = requestsBySpeaker[speaker];
       console.log(
@@ -320,13 +316,14 @@ export class AudioProcessor {
   }
 
   async combineAllSpeechWithBackground(
-    speechFiles: Array<{path: string; start: number; end: number}>,
+    speechFiles: string[],
     backgroundTrack: string,
-    // transcript: Transcript[]
+    transcript: Transcript[]
   ): Promise<string> {
     return this.audioCombiner.combineAudioFiles(
       backgroundTrack,
-      speechFiles
+      speechFiles,
+      transcript
     );
   }
 
