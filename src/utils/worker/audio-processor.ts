@@ -74,8 +74,11 @@ export class AudioProcessor {
       requestsBySpeaker[speaker].push(request as ZyphraTTSRequest);
     }
 
+    // Store results by speaker to maintain original order
+    const speakerResults: { [speaker: string]: string[] } = {};
+    const speakerResultsIndex: { [speaker: string]: number } = {};
+    
     // Process each speaker's requests
-    const allResults: string[] = [];
     for (const speaker in requestsBySpeaker) {
       const speakerRequests = requestsBySpeaker[speaker];
       console.log(
@@ -255,7 +258,9 @@ export class AudioProcessor {
           speakerRequests,
           language as string
         );
-        allResults.push(...results);
+        // Store results by speaker instead of appending directly to allResults
+        speakerResults[speaker] = results;
+        speakerResultsIndex[speaker] = 0; // Initialize index counter for each speaker
       } catch (error) {
         console.error(
           `[AudioProcessor] Error processing requests for speaker ${speaker}:`,
@@ -265,6 +270,21 @@ export class AudioProcessor {
       }
     }
 
+    // Reconstruct the final results array in the original transcript order
+    const allResults: string[] = [];
+    for (const item of mergedData) {
+      const speaker = item.speaker || "default";
+      if (speakerResults[speaker] && speakerResultsIndex[speaker] < speakerResults[speaker].length) {
+        // Get the next result for this speaker
+        const result = speakerResults[speaker][speakerResultsIndex[speaker]];
+        allResults.push(result);
+        speakerResultsIndex[speaker]++;
+      } else {
+        console.warn(`[AudioProcessor] Missing result for speaker ${speaker} at index ${speakerResultsIndex[speaker] || 0}`);
+      }
+    }
+
+    console.log(`[AudioProcessor] Reconstructed ${allResults.length} results in original transcript order`);
     return allResults;
   }
 
