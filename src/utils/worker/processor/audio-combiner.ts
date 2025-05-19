@@ -135,11 +135,11 @@ export class AudioCombiner {
         }:duration=first[speechmix];`;
       }
 
-      // Reduce background volume significantly to make speech more prominent
-      filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=0.2[bg];`;
+      // Set background volume to be audible but not overpowering the speech
+      filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=0.5[bg];`;
 
-      // Final mix of speech and background - with speech prominence
-      filterComplex += `[speechmix][bg]amix=inputs=2:duration=first[out]`;
+      // Final mix of speech and background - with better balance
+      filterComplex += `[speechmix][bg]amix=inputs=2:duration=first:weights=1.5 1[out]`;
 
       // Create input arguments string for ffmpeg
       let inputArgs = `-threads 2 -i "${silentBgPath}" `;
@@ -213,9 +213,9 @@ export class AudioCombiner {
       const channelLayout =
         bgAnalysis.format.channels === 1 ? "mono" : "stereo";
 
-      // Apply significant volume boost to make speech clearly audible
-      // Using volume=3.0 for triple the volume
-      const boostFilter = `aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout},volume=3.0`;
+      // Apply moderate volume boost to make speech clearly audible while allowing background to be heard
+      // Using volume=2.0 for double the volume instead of triple
+      const boostFilter = `aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout},volume=2.0`;
 
       // Process the speech file with volume boost
       await execAsync(
@@ -449,8 +449,8 @@ export class AudioCombiner {
         "areverse,aecho=0.6:0.3:20:0.3,areverse",
         // Gentle limiting to prevent any peaks
         "alimiter=level_in=1:level_out=1:limit=0.7:attack=5:release=50",
-        // Final loudness normalization to broadcast standards
-        "loudnorm=I=-16:TP=-1.5:LRA=9:print_format=summary"
+        // Final loudness normalization with better preservation of background audio
+        "loudnorm=I=-14:TP=-1:LRA=11:print_format=summary"
       ].filter(Boolean).join(",");
 
       // Apply second stage processing
@@ -494,7 +494,7 @@ export class AudioCombiner {
           `aformat=sample_fmts=fltp:sample_rates=${originalAnalysis.format.sampleRate}:channel_layouts=${channelLayout}`,
           "highpass=f=75",  // Basic rumble removal
           "equalizer=f=1000:width_type=h:width=1:g=2,equalizer=f=3000:width_type=h:width=1:g=3", // Basic speech enhancement
-          "loudnorm=I=-16:TP=-1.5:LRA=11" // Standard loudness
+          "loudnorm=I=-14:TP=-1:LRA=11" // Improved loudness settings for better background preservation
         ].join(",");
         
         await execAsync(
