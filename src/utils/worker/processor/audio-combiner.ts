@@ -132,7 +132,7 @@ export class AudioCombiner {
       }
 
       // Reduce background volume significantly to make speech more prominent
-      filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=0.3[bg];`;
+      filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=0.2[bg];`;
 
       // Final mix of speech and background - with speech prominence
       filterComplex += `[speechmix][bg]amix=inputs=2:duration=first[out]`;
