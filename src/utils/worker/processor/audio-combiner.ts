@@ -435,7 +435,7 @@ export class AudioCombiner {
         
         // 2. Dynamic background ducking (using advanced compressor as ducking)
         // This simulates sidechain compression by detecting loud parts (speech) and reducing volume temporarily
-        `compand=attacks=${adaptiveParams.duckingAttack}:decays=${adaptiveParams.duckingRelease}:points=-70/-70|-60/-60|-40/-30|-30/-10|-24/-6|-12/-3|-6/-3|0/-3:soft-knee=6:threshold=${adaptiveParams.duckingThreshold}:gain=0`,
+        `compand=attacks=${adaptiveParams.duckingAttack}:decays=${adaptiveParams.duckingRelease}:points=-70/-70|-60/-60|-40/-30|-30/-10|-24/-6|-12/-3|-6/-3|0/-3:soft-knee=6:threshold=${adaptiveParams.duckingThreshold.toString()}:gain=0`,
         
         // 3. Speech clarity enhancement with high-shelf filter
         // Boost high frequencies for better speech intelligibility
