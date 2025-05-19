@@ -208,63 +208,41 @@ export class AudioCombiner {
     try {
       console.log(`Processing speech file ${index} (enhancing speech quality)...`);
 
-      // First analyze the speech file to determine its characteristics
-      const speechAnalysis = await this.audioAnalyzer.analyzeAudio(speechPath);
-      console.log(`Speech file ${index} analysis:`, {
-        loudness: speechAnalysis.loudness.integrated.toFixed(2) + " LUFS",
-        peak: speechAnalysis.loudness.truePeak.toFixed(2) + " dB",
-        duration: speechAnalysis.duration.toFixed(2) + "s"
-      });
-
       // Create a processed speech file path
       const processedPath = path.join(
         outputDir,
         `processed_speech_${index}.wav`
       );
 
-      // Apply format conversion and advanced audio processing
+      // Apply format conversion and audio processing with fixed parameters
       const channelLayout =
         bgAnalysis.format.channels === 1 ? "mono" : "stereo";
 
-      // Determine adaptive processing parameters based on speech characteristics
-      // Customize target loudness based on content
-      const targetLoudness = speechAnalysis.loudness.integrated < -24 ? -16 : -18;
-      const loudnessDiff = targetLoudness - speechAnalysis.loudness.integrated;
-      const volumeAdjust = Math.max(0.5, Math.min(4.0, Math.pow(10, loudnessDiff / 20)));
-      
-      // Determine if we need stronger compression based on dynamic range
-      const needsStrongerCompression = speechAnalysis.loudness.range > 10;
-      
-      // Determine if we need more bass enhancement based on spectral characteristics
-      const needsMoreBass = speechAnalysis.loudness.integrated < -20;
-      
-      // Determine if we need more presence based on content
-      const needsMorePresence = speechAnalysis.loudness.integrated < -22;
-      
-      // Build comprehensive audio enhancement filter chain with adaptive parameters:
-      // 1. Normalize speech to consistent level
-      // 2. Apply multi-band compression for dynamics control
-      // 3. Enhance bass frequencies
-      // 4. Add presence boost for clarity
-      // 5. Final volume adjustment
+      // Use fixed parameters for consistent and faster processing
+      // Build comprehensive audio enhancement filter chain:
+      // 1. Format conversion
+      // 2. Loudness normalization
+      // 3. Multi-band compression for dynamics control
+      // 4. Bass enhancement
+      // 5. Presence boost for clarity
       const enhancementFilter = [
         // Format conversion
         `aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout}`,
         
-        // 1. Loudness normalization
-        `loudnorm=I=${targetLoudness}:TP=-1.5:LRA=${needsStrongerCompression ? 5 : 7}`,
+        // 1. Loudness normalization (fixed target)
+        `loudnorm=I=-17:TP=-1.5:LRA=6`,
         
-        // 2. Multi-band compression for dynamics control
-        `compand=attacks=${needsStrongerCompression ? 0.005 : 0.01}:decays=${needsStrongerCompression ? 0.1 : 0.2}:points=-80/-80|-50/-35|-30/-20|-20/-10|-5/-5|0/-2:soft-knee=${needsStrongerCompression ? 8 : 6}`,
+        // 2. Multi-band compression for dynamics control (balanced settings)
+        `compand=attacks=0.008:decays=0.15:points=-80/-80|-50/-35|-30/-20|-20/-10|-5/-5|0/-2:soft-knee=7`,
         
-        // 3. Bass enhancement (adaptive low frequency boost)
-        `equalizer=f=120:width_type=h:width=100:g=${needsMoreBass ? 4 : 3}`,
+        // 3. Bass enhancement (moderate boost)
+        `equalizer=f=120:width_type=h:width=100:g=3.5`,
         
-        // 4. Presence boost for clarity (adaptive speech frequencies enhancement)
-        `equalizer=f=2500:width_type=h:width=1000:g=${needsMorePresence ? 3.5 : 2.5}`,
+        // 4. Presence boost for clarity (moderate boost)
+        `equalizer=f=2500:width_type=h:width=1000:g=3.0`,
         
-        // 5. Final volume adjustment
-        `volume=${volumeAdjust.toFixed(2)}`
+        // 5. Final volume adjustment (fixed gain)
+        `volume=1.5`
       ].join(',');
 
       // Process the speech file with comprehensive enhancements
@@ -275,14 +253,7 @@ export class AudioCombiner {
       // Verify the output file
       await this.fileProcessor.verifyFile(processedPath);
       
-      // Log the enhancement applied
-      console.log(`Enhanced speech file ${index} with adaptive processing:`, {
-        targetLoudness: `${targetLoudness} LUFS`,
-        volumeAdjust: volumeAdjust.toFixed(2),
-        strongerCompression: needsStrongerCompression,
-        moreBass: needsMoreBass,
-        morePresence: needsMorePresence
-      });
+      console.log(`Enhanced speech file ${index} with fixed processing parameters`);
 
       return processedPath;
     } catch (error) {
@@ -293,11 +264,10 @@ export class AudioCombiner {
 
   private async applyConsistentFinalProcessing(
     inputPath: string,
-    originalAnalysis: any,
-    speechAnalysisResults?: any[]
+    originalAnalysis: any
   ): Promise<string> {
     try {
-      console.log("Applying final processing with advanced audio enhancements...");
+      console.log("Applying final processing with fixed audio enhancements...");
 
       // Create an output path
       const outputPath = await this.fileProcessor.createTempPath(
@@ -309,73 +279,35 @@ export class AudioCombiner {
       const channelLayout =
         originalAnalysis.format.channels === 1 ? "mono" : "stereo";
 
-      // Analyze the final mixed audio to determine optimal processing parameters
-      const mixedAnalysis = await this.audioAnalyzer.analyzeAudio(inputPath);
-      console.log("Mixed audio analysis before final processing:", {
-        loudness: mixedAnalysis.loudness.integrated.toFixed(2) + " LUFS",
-        peak: mixedAnalysis.loudness.truePeak.toFixed(2) + " dB",
-        range: mixedAnalysis.loudness.range.toFixed(2) + " LU"
-      });
-
-      // Determine adaptive processing parameters based on speech analysis results
-      let adaptiveParams = {
-        // Default parameters
+      // Use fixed parameters for consistent and faster processing
+      const fixedParams = {
         duckingThreshold: -30,
-        duckingAttack: 0.05,
-        duckingRelease: 0.3,
-        clarityBoost: 2.5,
+        duckingAttack: 0.04,
+        duckingRelease: 0.35,
+        clarityBoost: 2.8,
         targetLoudness: -14,
-        dynamicRange: 11
+        dynamicRange: 10
       };
       
-      // If we have speech analysis results, adjust parameters adaptively
-      if (speechAnalysisResults && speechAnalysisResults.length > 0) {
-        // Calculate average characteristics
-        const quietSpeechCount = speechAnalysisResults.filter(r => r.analysis !== null && r.characteristics?.isQuiet).length;
-        const loudSpeechCount = speechAnalysisResults.filter(r => r.analysis !== null && r.characteristics?.isLoud).length;
-        const wideDynamicRangeCount = speechAnalysisResults.filter(r => r.analysis !== null && r.characteristics?.hasWideDynamicRange).length;
-        
-        // Adjust ducking threshold based on speech loudness
-        if (quietSpeechCount > speechAnalysisResults.length / 2) {
-          // More aggressive ducking for quiet speech
-          adaptiveParams.duckingThreshold = -35;
-          adaptiveParams.duckingRelease = 0.4; // Slower release
-          adaptiveParams.clarityBoost = 3.0; // More clarity boost
-        } else if (loudSpeechCount > speechAnalysisResults.length / 2) {
-          // Less aggressive ducking for loud speech
-          adaptiveParams.duckingThreshold = -25;
-          adaptiveParams.duckingAttack = 0.03; // Faster attack
-        }
-        
-        // Adjust dynamic range based on speech characteristics
-        if (wideDynamicRangeCount > speechAnalysisResults.length / 2) {
-          // More compression for wide dynamic range speech
-          adaptiveParams.dynamicRange = 9;
-        }
-        
-        console.log("Using adaptive processing parameters:", adaptiveParams);
-      }
+      console.log("Using fixed processing parameters for better performance");
       
-      // Build comprehensive final processing filter chain with adaptive parameters:
+      // Build comprehensive final processing filter chain with fixed parameters:
       // 1. Format conversion
-      // 2. Dynamic background ducking (sidechain-like effect using crossfade)
-      // 3. Speech clarity enhancement with high-shelf filter
+      // 2. Dynamic background ducking (sidechain-like effect)
+      // 3. Speech clarity enhancement
       // 4. Final loudness normalization and limiting
       const finalFilter = [
         // 1. Format conversion
         `aformat=sample_fmts=fltp:sample_rates=${originalAnalysis.format.sampleRate}:channel_layouts=${channelLayout}`,
         
-        // 2. Dynamic background ducking (using advanced compressor as ducking)
-        // This simulates sidechain compression by detecting loud parts (speech) and reducing volume temporarily
-        `compand=attacks=${adaptiveParams.duckingAttack}:decays=${adaptiveParams.duckingRelease}:points=-70/-70|-60/-60|-40/-30|-30/-10|-24/-6|-12/-3|-6/-3|0/-3:soft-knee=6:threshold=${adaptiveParams.duckingThreshold}:gain=0`,
+        // 2. Dynamic background ducking (using compressor as ducking)
+        `compand=attacks=${fixedParams.duckingAttack}:decays=${fixedParams.duckingRelease}:points=-70/-70|-60/-60|-40/-30|-30/-10|-24/-6|-12/-3|-6/-3|0/-3:soft-knee=6:threshold=${fixedParams.duckingThreshold}:gain=0`,
         
         // 3. Speech clarity enhancement with high-shelf filter
-        // Boost high frequencies for better speech intelligibility
-        `highshelf=f=7000:width_type=h:width=0.5:g=${adaptiveParams.clarityBoost}`,
+        `highshelf=f=7000:width_type=h:width=0.5:g=${fixedParams.clarityBoost}`,
         
         // 4. Final loudness normalization and limiting
-        // Target -14 LUFS for final output with true peak limiting to prevent clipping
-        `loudnorm=I=${adaptiveParams.targetLoudness}:TP=-1:LRA=${adaptiveParams.dynamicRange}`,
+        `loudnorm=I=${fixedParams.targetLoudness}:TP=-1:LRA=${fixedParams.dynamicRange}`,
         
         // 5. Final limiter to prevent any clipping
         `alimiter=level_in=1:level_out=1:limit=1:attack=5:release=50:level=disabled`
