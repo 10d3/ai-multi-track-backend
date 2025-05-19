@@ -131,15 +131,8 @@ export class AudioCombiner {
         }:duration=first[speechmix];`;
       }
 
-      // Create a more sophisticated background ducking effect based on speech segments
-      // This creates a dynamic volume adjustment that reduces background when speech is present
-      console.log("Implementing dynamic background ducking based on speech segments...");
-      
-      // Use fixed background volume for consistent results and better performance
-      const backgroundVolume = 0.28; // Balanced value for most speech scenarios
-      
-      // Apply volume reduction to background
-      filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=${backgroundVolume}[bg];`;
+      // Reduce background volume significantly to make speech more prominent
+      filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=0.3[bg];`;
 
       // Final mix of speech and background - with speech prominence
       filterComplex += `[speechmix][bg]amix=inputs=2:duration=first[out]`;
@@ -184,7 +177,7 @@ export class AudioCombiner {
           "s",
       });
 
-      // Apply final processing with fixed parameters for better performance
+      // Apply final spectral matching to ensure consistent quality for all segments
       const processedPath = await this.applyConsistentFinalProcessing(
         finalPath,
         bgAnalysis
@@ -197,8 +190,6 @@ export class AudioCombiner {
     }
   }
 
-
-
   private async processSpeechForConsistency(
     speechPath: string,
     outputDir: string,
@@ -206,7 +197,7 @@ export class AudioCombiner {
     bgAnalysis: any
   ): Promise<string> {
     try {
-      console.log(`Processing speech file ${index} (enhancing speech quality)...`);
+      console.log(`Processing speech file ${index} (boosting volume)...`);
 
       // Create a processed speech file path
       const processedPath = path.join(
@@ -214,46 +205,21 @@ export class AudioCombiner {
         `processed_speech_${index}.wav`
       );
 
-      // Apply format conversion and audio processing with fixed parameters
+      // Apply format conversion and volume boost
       const channelLayout =
         bgAnalysis.format.channels === 1 ? "mono" : "stereo";
 
-      // Use fixed parameters for consistent and faster processing
-      // Build comprehensive audio enhancement filter chain:
-      // 1. Format conversion
-      // 2. Loudness normalization
-      // 3. Multi-band compression for dynamics control
-      // 4. Bass enhancement
-      // 5. Presence boost for clarity
-      const enhancementFilter = [
-        // Format conversion
-        `aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout}`,
-        
-        // 1. Loudness normalization (fixed target)
-        `loudnorm=I=-17:TP=-1.5:LRA=6`,
-        
-        // 2. Multi-band compression for dynamics control (balanced settings)
-        `compand=attacks=0.008:decays=0.15:points=-80/-80|-50/-35|-30/-20|-20/-10|-5/-5|0/-2:soft-knee=7`,
-        
-        // 3. Bass enhancement (moderate boost)
-        `equalizer=f=120:width_type=h:width=100:g=3.5`,
-        
-        // 4. Presence boost for clarity (moderate boost)
-        `equalizer=f=2500:width_type=h:width=1000:g=3.0`,
-        
-        // 5. Final volume adjustment (fixed gain)
-        `volume=1.5`
-      ].join(',');
+      // Apply significant volume boost to make speech clearly audible
+      // Using volume=3.0 for triple the volume
+      const boostFilter = `aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout},volume=3.0`;
 
-      // Process the speech file with comprehensive enhancements
+      // Process the speech file with volume boost
       await execAsync(
-        `ffmpeg -threads 2 -i "${speechPath}" -af "${enhancementFilter}" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${processedPath}"`
+        `ffmpeg -threads 2 -i "${speechPath}" -af "${boostFilter}" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${processedPath}"`
       );
 
       // Verify the output file
       await this.fileProcessor.verifyFile(processedPath);
-      
-      console.log(`Enhanced speech file ${index} with fixed processing parameters`);
 
       return processedPath;
     } catch (error) {
@@ -267,7 +233,7 @@ export class AudioCombiner {
     originalAnalysis: any
   ): Promise<string> {
     try {
-      console.log("Applying final processing with fixed audio enhancements...");
+      console.log("Applying final processing with speech volume emphasis...");
 
       // Create an output path
       const outputPath = await this.fileProcessor.createTempPath(
@@ -279,41 +245,12 @@ export class AudioCombiner {
       const channelLayout =
         originalAnalysis.format.channels === 1 ? "mono" : "stereo";
 
-      // Use fixed parameters for consistent and faster processing
-      const fixedParams = {
-        duckingThreshold: -30,
-        duckingAttack: 0.04,
-        duckingRelease: 0.35,
-        clarityBoost: 2.8,
-        targetLoudness: -14,
-        dynamicRange: 10
-      };
-      
-      console.log("Using fixed processing parameters for better performance");
-      
-      // Build comprehensive final processing filter chain with fixed parameters:
-      // 1. Format conversion
-      // 2. Dynamic background ducking (sidechain-like effect)
-      // 3. Speech clarity enhancement
-      // 4. Final loudness normalization and limiting
-      const finalFilter = [
-        // 1. Format conversion
-        `aformat=sample_fmts=fltp:sample_rates=${originalAnalysis.format.sampleRate}:channel_layouts=${channelLayout}`,
-        
-        // 2. Dynamic background ducking (using compressor as ducking)
-        `compand=attacks=${fixedParams.duckingAttack}:decays=${fixedParams.duckingRelease}:points=-70/-70|-60/-60|-40/-30|-30/-10|-24/-6|-12/-3|-6/-3|0/-3:soft-knee=6:threshold=${fixedParams.duckingThreshold}:gain=0`,
-        
-        // 3. Speech clarity enhancement with high-shelf filter
-        `highshelf=f=7000:width_type=h:width=0.5:g=${fixedParams.clarityBoost}`,
-        
-        // 4. Final loudness normalization and limiting
-        `loudnorm=I=${fixedParams.targetLoudness}:TP=-1:LRA=${fixedParams.dynamicRange}`,
-        
-        // 5. Final limiter to prevent any clipping
-        `alimiter=level_in=1:level_out=1:limit=1:attack=5:release=50:level=disabled`
-      ].join(',');
+      // Final processing to ensure speech is audible
+      // Simple dynamic range compression to bring up speech volume
+      const finalFilter = `aformat=sample_fmts=fltp:sample_rates=${originalAnalysis.format.sampleRate}:channel_layouts=${channelLayout},
+      compand=attacks=0.01:decays=0.2:points=-80/-80|-50/-25|-30/-15|-5/-5|0/-2:soft-knee=2:gain=6`;
 
-      // Process the final audio with comprehensive enhancements
+      // Process the final audio with volume enhancement
       await execAsync(
         `ffmpeg -threads 2 -i "${inputPath}" -af "${finalFilter}" -c:a pcm_s24le -ar ${originalAnalysis.format.sampleRate} -ac ${originalAnalysis.format.channels} "${outputPath}"`
       );
@@ -330,8 +267,6 @@ export class AudioCombiner {
           Math.abs(originalAnalysis.duration - finalAnalysis.duration).toFixed(
             3
           ) + "s",
-        finalLoudness: finalAnalysis.loudness.integrated.toFixed(2) + " LUFS",
-        finalPeak: finalAnalysis.loudness.truePeak.toFixed(2) + " dB"
       });
 
       return outputPath;
