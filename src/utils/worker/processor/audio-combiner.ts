@@ -22,8 +22,6 @@ export class AudioCombiner {
     speechPaths: string[],
     transcript: Transcript[]
   ): Promise<string> {
-    // First analyze all speech files to determine optimal processing parameters
-    const speechAnalysisResults = await this.analyzeAllSpeechFiles(speechPaths);
     try {
       if (!backgroundPath || !speechPaths.length) {
         throw new Error("Missing required audio files for combination");
@@ -137,9 +135,8 @@ export class AudioCombiner {
       // This creates a dynamic volume adjustment that reduces background when speech is present
       console.log("Implementing dynamic background ducking based on speech segments...");
       
-      // Calculate ducking parameters based on speech analysis
-      const hasMostlyQuietSpeech = speechAnalysisResults.filter(r => r.analysis !== null && r.characteristics?.isQuiet).length > speechSegmentPaths.length / 2;
-      const backgroundVolume = hasMostlyQuietSpeech ? 0.25 : 0.3; // More reduction for quiet speech
+      // Use fixed background volume for consistent results and better performance
+      const backgroundVolume = 0.28; // Balanced value for most speech scenarios
       
       // Apply volume reduction to background
       filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=${backgroundVolume}[bg];`;
@@ -187,12 +184,10 @@ export class AudioCombiner {
           "s",
       });
 
-      // Apply final spectral matching to ensure consistent quality for all segments
-      // Pass speech analysis results for adaptive processing
+      // Apply final processing with fixed parameters for better performance
       const processedPath = await this.applyConsistentFinalProcessing(
         finalPath,
-        bgAnalysis,
-        speechAnalysisResults
+        bgAnalysis
       );
 
       return processedPath;
@@ -202,70 +197,7 @@ export class AudioCombiner {
     }
   }
 
-  /**
-   * Analyzes all speech files to determine optimal processing parameters
-   * This enables adaptive processing based on the characteristics of each file
-   */
-  private async analyzeAllSpeechFiles(speechPaths: string[]): Promise<any[]> {
-    console.log("Analyzing all speech files for adaptive processing...");
-    const analysisResults = [];
-    
-    // Analyze each speech file
-    for (let i = 0; i < speechPaths.length; i++) {
-      try {
-        const analysis = await this.audioAnalyzer.analyzeAudio(speechPaths[i]);
-        analysisResults.push({
-          index: i,
-          path: speechPaths[i],
-          analysis: analysis,
-          // Determine speech characteristics
-          characteristics: {
-            // Is the speech too quiet?
-            isQuiet: analysis.loudness.integrated < -24,
-            // Is the speech too loud?
-            isLoud: analysis.loudness.integrated > -16,
-            // Does the speech have wide dynamic range?
-            hasWideDynamicRange: analysis.loudness.range > 10,
-            // Is the speech lacking bass?
-            lacksBass: true, // Default assumption for speech
-            // Is the speech lacking clarity?
-            lacksClarity: true, // Default assumption for speech
-          }
-        });
-        
-        console.log(`Speech file ${i} analysis:`, {
-          loudness: analysis.loudness.integrated.toFixed(2) + " LUFS",
-          peak: analysis.loudness.truePeak.toFixed(2) + " dB",
-          range: analysis.loudness.range.toFixed(2) + " LU",
-          duration: analysis.duration.toFixed(2) + "s"
-        });
-      } catch (error) {
-        console.error(`Error analyzing speech file ${i}:`, error);
-        // Add a placeholder with default values
-        analysisResults.push({
-          index: i,
-          path: speechPaths[i],
-          analysis: null,
-          characteristics: {
-            isQuiet: true,
-            isLoud: false,
-            hasWideDynamicRange: true,
-            lacksBass: true,
-            lacksClarity: true
-          }
-        });
-      }
-    }
-    
-    // Calculate overall statistics for adaptive processing
-    const avgLoudness = analysisResults
-      .filter(r => r.analysis !== null)
-      .reduce((sum, r) => sum + r.analysis!.loudness.integrated, 0) / 
-      analysisResults.filter(r => r.analysis !== null).length;
-    
-    console.log("Speech files analysis complete. Average loudness:", avgLoudness.toFixed(2) + " LUFS");
-    return analysisResults;
-  }
+
 
   private async processSpeechForConsistency(
     speechPath: string,
@@ -435,7 +367,7 @@ export class AudioCombiner {
         
         // 2. Dynamic background ducking (using advanced compressor as ducking)
         // This simulates sidechain compression by detecting loud parts (speech) and reducing volume temporarily
-        `compand=attacks=${adaptiveParams.duckingAttack}:decays=${adaptiveParams.duckingRelease}:points=-70/-70|-60/-60|-40/-30|-30/-10|-24/-6|-12/-3|-6/-3|0/-3:soft-knee=6:threshold=${adaptiveParams.duckingThreshold.toString()}:gain=0`,
+        `compand=attacks=${adaptiveParams.duckingAttack}:decays=${adaptiveParams.duckingRelease}:points=-70/-70|-60/-60|-40/-30|-30/-10|-24/-6|-12/-3|-6/-3|0/-3:soft-knee=6:threshold=${adaptiveParams.duckingThreshold}:gain=0`,
         
         // 3. Speech clarity enhancement with high-shelf filter
         // Boost high frequencies for better speech intelligibility
