@@ -117,18 +117,24 @@ export class AudioAnalyzer {
   private validateAnalysisResult(result: AudioAnalysisResult): void {
     const { loudness, format, duration } = result;
 
+    // Handle silent audio files by providing fallback values
+    // instead of throwing errors for loudness-related values
     if (isNaN(loudness.integrated)) {
-      throw new Error("Invalid integrated loudness value");
+      console.warn("Silent audio detected: Using fallback integrated loudness value");
+      loudness.integrated = -70; // Very quiet fallback value for silent audio
     }
 
     if (isNaN(loudness.truePeak)) {
-      throw new Error("Invalid true peak value");
+      console.warn("Silent audio detected: Using fallback true peak value");
+      loudness.truePeak = -70; // Very quiet fallback value for silent audio
     }
 
     if (isNaN(loudness.range)) {
-      throw new Error("Invalid loudness range value");
+      console.warn("Silent audio detected: Using fallback loudness range value");
+      loudness.range = 1; // Minimal range for silent audio
     }
 
+    // Still validate format and duration as these are critical
     if (isNaN(format.sampleRate) || format.sampleRate <= 0) {
       throw new Error(`Invalid sample rate: ${format.sampleRate}`);
     }
