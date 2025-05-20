@@ -339,12 +339,36 @@ export class AudioProcessor {
     speechFiles: string[],
     backgroundTrack: string,
     transcript: Transcript[]
-  ): Promise<string> {
-    return this.audioCombiner.combineAudioFiles(
+  ): Promise<{ withBackground: string; withoutBackground: string }> {
+    // Combine with background music
+    const withBackground = await this.audioCombiner.combineAudioFiles(
       backgroundTrack,
       speechFiles,
       transcript
     );
+    
+    // Create a version without background music by using a silent background track
+    // We'll create a silent audio file with the same duration as the background track
+    const bgAnalysis = await this.audioAnalyzer.analyzeAudio(backgroundTrack);
+    const silentBgPath = await this.fileProcessor.createTempPath("silent_bg", "wav");
+    
+    // Create silent audio with same duration, sample rate and channels as the original background
+    await execAsync(
+      `ffmpeg -threads 2 -f lavfi -i anullsrc=r=${
+        bgAnalysis.format.sampleRate
+      }:cl=${bgAnalysis.format.channels === 1 ? "mono" : "stereo"} -t ${
+        bgAnalysis.duration
+      } -c:a pcm_s24le "${silentBgPath}"`
+    );
+    
+    // Combine speech with silent background (effectively just the speech)
+    const withoutBackground = await this.audioCombiner.combineAudioFiles(
+      silentBgPath,
+      speechFiles,
+      transcript
+    );
+    
+    return { withBackground, withoutBackground };
   }
 
   async uploadToStorage(filePath: string): Promise<string> {
