@@ -339,12 +339,25 @@ export class AudioProcessor {
     speechFiles: string[],
     backgroundTrack: string,
     transcript: Transcript[]
-  ): Promise<string> {
-    return this.audioCombiner.combineAudioFiles(
+  ): Promise<{ withBackground: string; withoutBackground: string }> {
+    // First combine just the speech files without background
+    const speechOnlyPath = await this.audioCombiner.combineAudioFiles(
+      null,
+      speechFiles,
+      transcript
+    );
+
+    // Then combine with background
+    const withBackgroundPath = await this.audioCombiner.combineAudioFiles(
       backgroundTrack,
       speechFiles,
       transcript
     );
+
+    return {
+      withBackground: withBackgroundPath,
+      withoutBackground: speechOnlyPath
+    };
   }
 
   async uploadToStorage(filePath: string): Promise<string> {

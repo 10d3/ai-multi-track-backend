@@ -1,33 +1,3 @@
-// // This is your Prisma schema file,
-// // learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// // Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
-// generator client {
-//   provider = "prisma-client-js"
-//   // binaryTargets = ["native", "debian-openssl-1.1.x"]
-// }
-
-// datasource db {
-//   provider = "postgresql"
-//   url      = env("DATABASE_URL")
-// }
-
-// model User {
-//   id    Int     @id @default(autoincrement())
-//   email String  @unique
-//   name  String
-//   password String
-//   token String?
-// }
-
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
@@ -94,11 +64,14 @@ model Plan {
 
 model Subscription {
   id                      String    @id @default(cuid())
-  StripeCustomerId        String?   @unique @map(name: "stripe_customer_id")
-  StripeSubcriptionId     String?   @unique @map(name: "stripe_subcription_id")
+  StripeCustomerId        String?   @unique
+  StripeSubscriptionId    String?   @unique
   StripePriceId           String?
-  StripeCurrentPeriodEnd  DateTime? @unique @map(name: "stripe_Current_period_end")
+  StripeCurrentPeriodEnd  DateTime? @unique
   StripeCancelAtPeriodEnd Boolean?
+  paymentStatus           String?   @default("active") // active, past_due, canceled, unpaid
+  lastPaymentStatus       String? // Track the last payment status
+  lastPaymentDate         DateTime? // Track when the last payment was made
   userId                  String    @unique
   productPriceId          String
   availableMinutes        Float     @default(0) // Track remaining minutes
@@ -110,11 +83,12 @@ model Subscription {
 }
 
 model AudioProcess {
-  id              String        @id @default(cuid())
-  status          String?       @default("progress")
-  finalAudio      String?
-  transcreationId String        @unique // Add @unique to enforce a one-to-one relationship
-  transcreation   Transcreation @relation(fields: [transcreationId], references: [id], onDelete: Cascade)
+  id                  String        @id @default(cuid())
+  status              String?       @default("progress")
+  finalAudio          String?
+  finalAudioWithoutBg String?
+  transcreationId     String        @unique // Add @unique to enforce a one-to-one relationship
+  transcreation       Transcreation @relation(fields: [transcreationId], references: [id], onDelete: Cascade)
 }
 
 model Transcreation {
@@ -152,14 +126,14 @@ model Transcript {
 }
 
 model MetadataTranscript {
-  id                     String                  @id @default(cuid())
-  contentType            String[]
+  id           String     @id @default(cuid())
+  contentType  String[]
   // formalityLevel         String
   // culturalContext        String
   // recommendedPace        String
   // speakerCharacteristics SpeakerCharacteristics?
-  transcriptId           String                  @unique // Ensure one metadata per transcript
-  transcript             Transcript              @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+  transcriptId String     @unique // Ensure one metadata per transcript
+  transcript   Transcript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
 }
 
 // model SpeakerCharacteristics {
