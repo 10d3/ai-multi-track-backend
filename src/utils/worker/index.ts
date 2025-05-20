@@ -99,7 +99,7 @@ const worker = new Worker<JobData>(
         ...job.data,
         currentOperation: "Combining speech with background",
       });
-      const combinedAudioPaths =
+      const combinedAudioPath =
         await audioProcessor.combineAllSpeechWithBackground(
           ttsConvertedPaths,
           backgroundTrack,
@@ -110,34 +110,23 @@ const worker = new Worker<JobData>(
       await job.updateProgress(Math.round((completedSteps / totalSteps) * 100));
       recordStepTime();
 
-      // Upload final results (both with and without background)
+      // Upload final result
       await job.updateData({
         ...job.data,
         currentOperation: "Finalizing and uploading",
       });
       const finalAudioUrl = await audioProcessor.uploadToStorage(
-        combinedAudioPaths.withBackground
-      );
-      
-      const finalAudioWithoutBgUrl = await audioProcessor.uploadToStorage(
-        combinedAudioPaths.withoutBackground
+        combinedAudioPath
       );
 
       completedSteps++;
       await job.updateProgress(100);
       recordStepTime();
 
-      // Update the audio process status with both URLs
-      await updateAudioProcessStatus(
-        job.data.id, 
-        "completed", 
-        finalAudioUrl, 
-        finalAudioWithoutBgUrl
-      );
+      await updateAudioProcessStatus(job.data.id, "completed", finalAudioUrl);
 
       return {
         finalAudioUrl,
-        finalAudioWithoutBgUrl,
         processingTime: Date.now() - startTime,
       };
     } catch (error: any) {

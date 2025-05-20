@@ -126,13 +126,11 @@ export const formatTranscreationForWorker = async (
  * @param transcreationId The ID of the transcreation
  * @param status The status of the audio process
  * @param finalAudio The URL of the final audio (if completed)
- * @param finalAudioWithoutBg The URL of the final audio without background (if completed)
  */
 export const updateAudioProcessStatus = async (
   transcreationId: string,
   status: string = "progress",
-  finalAudio?: string,
-  finalAudioWithoutBg?: string
+  finalAudio?: string
 ) => {
   return prisma.audioProcess.upsert({
     where: {
@@ -141,13 +139,11 @@ export const updateAudioProcessStatus = async (
     update: {
       status,
       ...(finalAudio && { finalAudio }),
-      ...(finalAudioWithoutBg && { finalAudioWithoutBg }),
     },
     create: {
       transcreationId,
       status,
       ...(finalAudio && { finalAudio }),
-      ...(finalAudioWithoutBg && { finalAudioWithoutBg }),
     },
   });
 };
