@@ -4,7 +4,11 @@ import http from "http";
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
-import { audioProcessingQueue, eventAudioProcessing } from "./queue";
+import {
+  audioProcessingQueue,
+  eventAudioProcessing,
+  getQueuePosition,
+} from "./queue";
 
 dotenv.config();
 
@@ -78,15 +82,21 @@ async function sendJobUpdate(jobId: string) {
 
   try {
     const job = await audioProcessingQueue.getJob(jobId);
-
     if (!job) {
-      console.log(`[SSE] No job found for id ${jobId}`);
+      console.log(`[SSE] Job ${jobId} not found`);
       return;
     }
 
     const state = await job.getState();
-    console.log(`[SSE] Job ${jobId} state: ${state}`);
     const progress = job.progress || 0;
+    const processingStage = job.data.currentOperation || '';
+
+    // Get queue information if job is waiting
+    let queueInfo = null;
+    if (state === 'waiting') {
+      queueInfo = await getQueuePosition(jobId);
+    }
+
     const remainingTime =
       job.opts.delay && job.timestamp
         ? Math.max(0, job.timestamp + job.opts.delay - Date.now())
@@ -98,17 +108,17 @@ async function sendJobUpdate(jobId: string) {
     let error = null;
 
     // Enhanced processing stage information
-    let processingStage = "Initializing";
+    let processingStageInfo = "Initializing";
     if (progress > 0 && progress <= 20) {
-      processingStage = "Generating speech from text";
+      processingStageInfo = "Generating speech from text";
     } else if (progress > 20 && progress <= 50) {
-      processingStage = "Separating background music";
+      processingStageInfo = "Separating background music";
     } else if (progress > 50 && progress <= 80) {
-      processingStage = "Combining speech with background";
+      processingStageInfo = "Combining speech with background";
     } else if (progress > 80 && progress < 100) {
-      processingStage = "Finalizing and uploading";
+      processingStageInfo = "Finalizing and uploading";
     } else if (progress === 100) {
-      processingStage = "Complete";
+      processingStageInfo = "Complete";
     }
 
     // Estimated time calculation based on progress
@@ -119,10 +129,10 @@ async function sendJobUpdate(jobId: string) {
 
     if (state === "completed") {
       result = job.returnvalue;
-      processingStage = "Complete";
+      processingStageInfo = "Complete";
     } else if (state === "failed") {
       error = job.failedReason;
-      processingStage = "Failed";
+      processingStageInfo = "Failed";
     }
 
     const title =
@@ -136,6 +146,7 @@ async function sendJobUpdate(jobId: string) {
         state,
         progress,
         processingStage,
+        queueInfo,
       });
 
       res.write(
@@ -150,6 +161,7 @@ async function sendJobUpdate(jobId: string) {
           error,
           jobData,
           title,
+          queueInfo,
           timestamp: Date.now(),
           startedAt: job.timestamp,
         })}\n\n`

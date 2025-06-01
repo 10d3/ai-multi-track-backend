@@ -45,7 +45,7 @@ const credentials = {
 export const redisHost = process.env.REDIS_HOST || "localhost";
 export const redisPort = parseInt(process.env.REDIS_PORT || "6379");
 export const redisUserName = process.env.REDIS_USERNAME || "default";
-export const redisPassword = process.env.REDIS_PASSWORD || "test123";  // Match the password
+export const redisPassword = process.env.REDIS_PASSWORD || "test123"; // Match the password
 
 console.log("Redis Configuration:", {
   host: redisHost,
@@ -121,3 +121,82 @@ const storageGoogle = new Storage({ credentials });
 
 // Export key services
 export { audioProcessingQueue, storageGoogle, credentials };
+
+export const getQueuePosition = async (jobId: string) => {
+  try {
+    // Get all waiting jobs
+    const waitingJobs = await audioProcessingQueue.getWaiting();
+
+    // Sort jobs by priority and timestamp
+    const sortedJobs = waitingJobs.sort((a, b) => {
+      // First sort by priority
+      const priorityDiff = (a.opts.priority || 3) - (b.opts.priority || 3);
+      if (priorityDiff !== 0) return priorityDiff;
+
+      // If same priority, sort by timestamp
+      return (a.timestamp || 0) - (b.timestamp || 0);
+    });
+
+    // Find the position of our job
+    const position = sortedJobs.findIndex((job) => job.id === jobId);
+
+    // Get active jobs count
+    const activeJobs = await audioProcessingQueue.getActive();
+
+    // Get total jobs in queue
+    const totalJobs = await audioProcessingQueue.count();
+
+    // Get estimated wait time based on average processing time
+    const completedJobs = await audioProcessingQueue.getCompleted();
+    const recentCompletedJobs = completedJobs.slice(-10); // Get last 10 completed jobs
+
+    let averageProcessingTime = 0;
+    if (recentCompletedJobs.length > 0) {
+      averageProcessingTime =
+        recentCompletedJobs.reduce((acc, job) => {
+          const processingTime = job.returnvalue?.processingTime || 0;
+          return acc + processingTime;
+        }, 0) / recentCompletedJobs.length;
+    }
+
+    // Get the job's plan information
+    const job = await audioProcessingQueue.getJob(jobId);
+    const userPlan = job?.data.userPlan;
+
+    // Calculate estimated wait time based on plan
+    const estimatedWaitTime = position * averageProcessingTime;
+    
+    // Get plan-specific upgrade suggestions
+    const getUpgradeSuggestion = (currentPlan: string) => {
+      switch (currentPlan) {
+        case 'Launch Plan':
+          return 'Upgrade to Growth Plan for faster processing!';
+        case 'Growth Plan':
+          return 'Upgrade to Pro Studio Plan for priority processing!';
+        case 'Pro Studio Plan':
+          return 'Upgrade to Elite Creator Plan for instant processing!';
+        default:
+          return null;
+      }
+    };
+
+    return {
+      position: position + 1,
+      totalJobs,
+      activeJobs: activeJobs.length,
+      estimatedWaitTime,
+      averageProcessingTime,
+      userPlan,
+      upgradeSuggestion: getUpgradeSuggestion(userPlan?.name || 'Launch Plan'),
+      planBenefits: {
+        'Launch Plan': 'Standard processing queue',
+        'Growth Plan': 'Faster processing queue',
+        'Pro Studio Plan': 'Priority processing queue',
+        'Elite Creator Plan': 'Instant processing queue'
+      }
+    };
+  } catch (error) {
+    console.error('Error getting queue position:', error);
+    return null;
+  }
+};
