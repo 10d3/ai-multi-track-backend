@@ -5,6 +5,13 @@ import type { JobData } from "../types/type";
 import { AudioProcessor } from "./audio-processor";
 import { updateAudioProcessStatus } from "../../controllers/transcreation.controller";
 
+
+const PRIORITY_LEVELS = {
+  FREE: 3,
+  STANDARD: 2,
+  PREMIUM: 1
+};
+
 const worker = new Worker<JobData>(
   "audio-processing",
   async (job) => {

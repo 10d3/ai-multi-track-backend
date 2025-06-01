@@ -107,6 +107,7 @@ model Transcreation {
   user             User          @relation(fields: [userId], references: [id])
   transcript       Transcript[] // Allow multiple transcripts
   audioProcess     AudioProcess? // Set optional, enforcing one-to-one relationship
+  priority         Int           @default(10000)
 }
 
 model Transcript {

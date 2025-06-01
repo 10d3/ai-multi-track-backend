@@ -103,7 +103,8 @@ export const formatTranscreationForWorker = async (
       output_format: "MP3",
       emotion,
       start,
-      end
+      end,
+      priority : transcreation.priority
     };
   });
 
@@ -115,7 +116,8 @@ export const formatTranscreationForWorker = async (
     userEmail: transcreation.user.email as string,
     email: transcreation.user.email as string, // Add this for compatibility with notifyAPI
     language: transcreation.toLanguage || "en-US", // Add language information
-    id: transcreationId
+    id: transcreationId,
+    priority : transcreation.priority
   };
 
   return jobData;
@@ -166,6 +168,7 @@ export const startAudioProcessing = async (transcreationId: string) => {
       jobId: `audio-job-${transcreationId}`,
       removeOnComplete: false,
       removeOnFail: false,
+      priority: jobData.priority
     });
 
     // Update the transcreation with the job ID

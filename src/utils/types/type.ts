@@ -29,6 +29,7 @@ export interface JobData {
   language?: string;   // Language information
   currentOperation?: string;
   startTime?: number;
+  priority?: number
   processingDetails?: {
     currentStep: number;
     totalSteps: number;
@@ -49,6 +50,7 @@ export interface TTSRequest {
   voice_name: string;
   start: number;
   end: number;
+  // priority?:number
 }
 
 export interface Emotion{
