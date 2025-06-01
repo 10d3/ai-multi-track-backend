@@ -2,17 +2,8 @@ import { PrismaClient } from "@prisma/client";
 import { voices } from "../utils/constant/voices";
 import type { JobData } from "../utils/types/type";
 import { audioProcessingQueue } from "../utils/queue";
-import { PRIORITY_LEVELS } from "../utils/worker/index";
 
 const prisma = new PrismaClient();
-
-// Update JobData type to include userPlan
-interface ExtendedJobData extends JobData {
-  userPlan?: {
-    name: string;
-    priority: number;
-  };
-}
 
 // We don't need a separate interface as we're using the JobData type directly
 
@@ -165,48 +156,16 @@ export const updateAudioProcessStatus = async (
 export const startAudioProcessing = async (transcreationId: string) => {
   try {
     // Format the data for the worker
-    const jobData = await formatTranscreationForWorker(transcreationId) as ExtendedJobData;
-
-    // Get user's subscription and plan
-    const transcreation = await prisma.transcreation.findUnique({
-      where: { id: transcreationId },
-      include: {
-        user: {
-          include: {
-            subscriptions: {  // Changed from subscription to subscriptions
-              include: {
-                plan: true
-              }
-            }
-          }
-        }
-      }
-    });
-
-    // Add plan information to job data
-    if (transcreation?.user?.subscriptions?.[0]?.plan) {  // Changed to access first subscription
-      const plan = transcreation.user.subscriptions[0].plan;
-      jobData.userPlan = {
-        name: plan.name as string,
-        priority: PRIORITY_LEVELS[plan.name as keyof typeof PRIORITY_LEVELS] || PRIORITY_LEVELS['Launch Plan']
-      };
-    } else {
-      // Default to Launch Plan if no subscription found
-      jobData.userPlan = {
-        name: 'Launch Plan',
-        priority: PRIORITY_LEVELS['Launch Plan']
-      };
-    }
+    const jobData = await formatTranscreationForWorker(transcreationId);
 
     // Create or update the audio process record
     await updateAudioProcessStatus(transcreationId, "processing");
 
-    // Add the job to the queue with priority
+    // Add the job to the queue
     const job = await audioProcessingQueue.add('audio-processing', jobData, {
       jobId: `audio-job-${transcreationId}`,
       removeOnComplete: false,
       removeOnFail: false,
-      priority: jobData.userPlan.priority
     });
 
     // Update the transcreation with the job ID

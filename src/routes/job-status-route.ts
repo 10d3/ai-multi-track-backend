@@ -1,6 +1,5 @@
 import express from "express";
 import { audioProcessingQueue } from "../utils/queue";
-import { getQueuePosition } from "../utils/queue";
 
 const router = express.Router();
 
@@ -21,12 +20,6 @@ router.get("/:jobId", async (req, res) => {
 
     // Progress (either manually tracked or automatically)
     const progress = job.progress || 0;
-
-    // Get queue position information if job is waiting
-    let queueInfo = null;
-    if (state === 'waiting') {
-      queueInfo = await getQueuePosition(jobId);
-    }
 
     // Calculate remaining time (if job is delayed)
     const remainingTime =
@@ -60,12 +53,10 @@ router.get("/:jobId", async (req, res) => {
       state,
       progress,
       remainingTime,
-      queueInfo,
       result,
       error,
       jobData,
       title, // Include the title in the response
-      userPlan: jobData.userPlan, // Include plan information
     });
   } catch (error) {
     console.error("Error fetching job status:", error);

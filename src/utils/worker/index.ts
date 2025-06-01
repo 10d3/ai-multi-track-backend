@@ -5,19 +5,6 @@ import type { JobData } from "../types/type";
 import { AudioProcessor } from "./audio-processor";
 import { updateAudioProcessStatus } from "../../controllers/transcreation.controller";
 
-// Define priority levels based on your plan names
-export const PRIORITY_LEVELS = {
-  "Launch Plan": 4, // Lowest priority (Free plan)
-  "Growth Plan": 3, // Basic paid plan
-  "Pro Studio Plan": 2, // Mid-tier plan
-  "Elite Creator Plan": 1, // Highest priority (Most expensive plan)
-} as const;
-
-// Define custom worker options type
-interface CustomWorkerOptions extends WorkerOptions {
-  priority?: (job: { data: JobData }) => number;
-}
-
 const worker = new Worker<JobData>(
   "audio-processing",
   async (job) => {
@@ -175,11 +162,7 @@ const worker = new Worker<JobData>(
       age: 24 * 3600,
       count: 100,
     },
-    // Add priority handling with proper typing
-    priority: (job: { data: JobData }) => {
-      return job.data.userPlan?.priority || PRIORITY_LEVELS["Launch Plan"];
-    },
-  } as any
+  }
 );
 
 function getCurrentStepName(step: number): string {

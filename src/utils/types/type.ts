@@ -37,11 +37,6 @@ export interface JobData {
     stepTimes: number[];
     lastStepName: string;
   };
-  id: string;
-  userPlan?: {
-    name: string;
-    priority: number;
-  };
 }
 
 import type { EmotionWeights } from "@zyphra/client";
