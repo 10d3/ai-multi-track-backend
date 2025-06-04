@@ -423,7 +423,7 @@ export class AudioCombiner {
     bgAnalysis: any
   ): Promise<string> {
     try {
-      console.log(`Processing speech file ${index} (boosting volume and normalizing)...`);
+      console.log(`Processing speech file ${index} (boosting volume)...`);
 
       // Create a processed speech file path
       const processedPath = path.join(
@@ -435,15 +435,13 @@ export class AudioCombiner {
       const channelLayout =
         bgAnalysis.format.channels === 1 ? "mono" : "stereo";
 
-      // Enhanced processing: normalize, boost volume, and apply gentle compression
-      const processFilter = `aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout},` +
-        `loudnorm=I=-16:TP=-1.5:LRA=11,` + // Normalize loudness
-        `volume=2.5,` + // Boost volume
-        `compand=attacks=0.01:decays=0.1:points=-80/-80|-45/-15|-27/-9|-5/-5|20/20:soft-knee=2`; // Gentle compression
+      // Apply significant volume boost to make speech clearly audible
+      // Using volume=3.0 for triple the volume
+      const boostFilter = `aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout},volume=3.0`;
 
-      // Process the speech file with enhanced processing
+      // Process the speech file with volume boost
       await execAsync(
-        `ffmpeg -threads 2 -i "${speechPath}" -af "${processFilter}" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${processedPath}"`
+        `ffmpeg -threads 2 -i "${speechPath}" -af "${boostFilter}" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${processedPath}"`
       );
 
       // Verify the output file
