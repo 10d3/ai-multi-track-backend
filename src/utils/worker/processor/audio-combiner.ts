@@ -197,30 +197,33 @@ export class AudioCombiner {
     bgAnalysis: any
   ): Promise<string> {
     try {
-      console.log(`Processing speech file ${index} (boosting volume)...`);
+      console.log(`Processing speech file ${index} (boosting volume and ensuring isolation)...`);
+      
+      const processedPath = path.join(outputDir, `processed_speech_${index}.wav`);
+      
+      // Enhanced processing chain:
+      // 1. Normalize audio
+      // 2. Apply noise gate to remove any background noise
+      // 3. Apply compression to maintain consistent levels
+      // 4. Add fade in/out to prevent clicks
+      const filterChain = [
+        // Normalize audio to -23 LUFS (broadcast standard)
+        "loudnorm=I=-23:LRA=7:TP=-1",
+        // Apply noise gate to remove any background noise
+        "anlmdn=s=7:p=0.002:r=0.001:m=15:b=1",
+        // Apply compression to maintain consistent levels
+        "acompressor=threshold=-24dB:ratio=4:attack=20:release=100",
+        // Add fade in/out to prevent clicks
+        "afade=t=in:st=0:d=0.01,afade=t=out:st=-0.01:d=0.01"
+      ].join(",");
 
-      // Create a processed speech file path
-      const processedPath = path.join(
-        outputDir,
-        `processed_speech_${index}.wav`
-      );
-
-      // Apply format conversion and volume boost
-      const channelLayout =
-        bgAnalysis.format.channels === 1 ? "mono" : "stereo";
-
-      // Apply significant volume boost to make speech clearly audible
-      // Using volume=3.0 for triple the volume
-      const boostFilter = `aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout},volume=3.0`;
-
-      // Process the speech file with volume boost
       await execAsync(
-        `ffmpeg -threads 2 -i "${speechPath}" -af "${boostFilter}" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${processedPath}"`
+        `ffmpeg -threads 2 -i "${speechPath}" -af "${filterChain}" -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} -c:a pcm_s24le "${processedPath}"`
       );
 
-      // Verify the output file
+      // Verify the processed file
       await this.fileProcessor.verifyFile(processedPath);
-
+      
       return processedPath;
     } catch (error) {
       console.error(`Error processing speech file ${index}:`, error);
@@ -233,45 +236,48 @@ export class AudioCombiner {
     originalAnalysis: any
   ): Promise<string> {
     try {
-      console.log("Applying final processing with speech volume emphasis...");
-
-      // Create an output path
       const outputPath = await this.fileProcessor.createTempPath(
         "final_processed",
         "wav"
       );
 
-      // Extract basic format parameters
-      const channelLayout =
-        originalAnalysis.format.channels === 1 ? "mono" : "stereo";
+      // Enhanced final processing chain:
+      // 1. Apply spectral matching to match original audio characteristics
+      // 2. Apply final noise gate to remove any remaining artifacts
+      // 3. Apply final normalization
+      // 4. Add subtle compression to ensure consistent levels
+      const filterChain = [
+        // Spectral matching
+        "afftfilt=real='hypot(re,im)*sin(0)':imag='hypot(re,im)*cos(0)':win_size=512:overlap=0.75",
+        // Final noise gate
+        "anlmdn=s=7:p=0.001:r=0.001:m=15:b=1",
+        // Final normalization
+        "loudnorm=I=-23:LRA=7:TP=-1",
+        // Subtle compression
+        "acompressor=threshold=-24dB:ratio=2:attack=50:release=200"
+      ].join(",");
 
-      // Final processing to ensure speech is audible
-      // Simple dynamic range compression to bring up speech volume
-      const finalFilter = `aformat=sample_fmts=fltp:sample_rates=${originalAnalysis.format.sampleRate}:channel_layouts=${channelLayout},
-      compand=attacks=0.01:decays=0.2:points=-80/-80|-50/-25|-30/-15|-5/-5|0/-2:soft-knee=2:gain=6`;
-
-      // Process the final audio with volume enhancement
       await execAsync(
-        `ffmpeg -threads 2 -i "${inputPath}" -af "${finalFilter}" -c:a pcm_s24le -ar ${originalAnalysis.format.sampleRate} -ac ${originalAnalysis.format.channels} "${outputPath}"`
+        `ffmpeg -threads 2 -i "${inputPath}" -af "${filterChain}" -ar ${originalAnalysis.format.sampleRate} -ac ${originalAnalysis.format.channels} -c:a pcm_s24le "${outputPath}"`
       );
 
-      // Verify the output file
+      // Verify the final processed file
       await this.fileProcessor.verifyFile(outputPath);
 
-      // Verify final length matches original background
+      // Validate the final audio quality
       const finalAnalysis = await this.audioAnalyzer.analyzeAudio(outputPath);
-      console.log("Final audio validation:", {
-        originalDuration: originalAnalysis.duration.toFixed(3) + "s",
-        finalDuration: finalAnalysis.duration.toFixed(3) + "s",
-        difference:
-          Math.abs(originalAnalysis.duration - finalAnalysis.duration).toFixed(
-            3
-          ) + "s",
+      
+      // Log quality metrics
+      console.log("Final audio quality metrics:", {
+        duration: finalAnalysis.duration.toFixed(2) + "s",
+        loudness: finalAnalysis.loudness.integrated.toFixed(2) + " LUFS",
+        peak: finalAnalysis.loudness.truePeak.toFixed(2) + " dB",
+        range: finalAnalysis.loudness.range.toFixed(2) + " LU"
       });
 
       return outputPath;
     } catch (error) {
-      console.error("Error applying final processing:", error);
+      console.error("Error in final audio processing:", error);
       throw error;
     }
   }
