@@ -165,11 +165,11 @@ export class AudioCombiner {
         }:duration=first[speechmix];`;
       }
 
-      // Increase background volume significantly (2.0 = 200% of original)
-      filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=2.0[bg];`;
+      // Keep background at original volume
+      filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=1.0[bg];`;
 
-      // Final mix of speech and background - with background more prominent
-      filterComplex += `[speechmix][bg]amix=inputs=2:duration=first:weights=0.3 0.7[out]`;
+      // Final mix of speech and background - with original background volume
+      filterComplex += `[speechmix][bg]amix=inputs=2:duration=first:weights=0.8 0.2[out]`;
 
       // Create input arguments string for ffmpeg
       let inputArgs = `-threads 2 -i "${silentBgPath}" `;
