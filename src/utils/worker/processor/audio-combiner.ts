@@ -232,12 +232,11 @@ export class AudioCombiner {
     audioPath: string
   ): Promise<VoiceActivitySegment[]> {
     try {
-      console.log("Running voice activity detection...");
+      console.log("Running enhanced voice activity detection...");
 
-      // Use silencedetect to find non-silent segments (which likely contain speech)
-      // Detect silence with threshold -30dB and minimum duration of 0.5s
+      // Use a more sensitive voice detection approach with multiple filters
       const { stderr } = await execAsync(
-        `ffmpeg -i "${audioPath}" -af silencedetect=noise=-30dB:duration=0.5 -f null - 2>&1`
+        `ffmpeg -i "${audioPath}" -af "highpass=f=200,lowpass=f=3000,silencedetect=noise=-25dB:duration=0.3" -f null - 2>&1`
       );
 
       const voiceSegments: VoiceActivitySegment[] = [];
@@ -257,7 +256,7 @@ export class AudioCombiner {
             voiceSegments.push({
               start: currentStart,
               end: timestamp,
-              confidence: 0.8, // Basic confidence score
+              confidence: 0.9, // Increased confidence score
             });
           }
           isInSilence = true;
@@ -270,7 +269,6 @@ export class AudioCombiner {
 
       // Handle case where audio ends with voice
       if (!isInSilence) {
-        // Get audio duration for final segment
         const { stdout } = await execAsync(
           `ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${audioPath}"`
         );
@@ -279,19 +277,35 @@ export class AudioCombiner {
         voiceSegments.push({
           start: currentStart,
           end: duration,
-          confidence: 0.8,
+          confidence: 0.9,
         });
       }
 
+      // Merge very close segments (less than 0.2s apart)
+      const mergedSegments: VoiceActivitySegment[] = [];
+      if (voiceSegments.length > 0) {
+        let currentSegment = { ...voiceSegments[0] };
+        
+        for (let i = 1; i < voiceSegments.length; i++) {
+          if (voiceSegments[i].start - currentSegment.end < 0.2) {
+            currentSegment.end = voiceSegments[i].end;
+          } else {
+            mergedSegments.push(currentSegment);
+            currentSegment = { ...voiceSegments[i] };
+          }
+        }
+        mergedSegments.push(currentSegment);
+      }
+
       console.log(
-        `Detected ${voiceSegments.length} voice activity segments:`,
-        voiceSegments.map((s) => `${s.start.toFixed(2)}s-${s.end.toFixed(2)}s`)
+        `Detected ${mergedSegments.length} voice activity segments:`,
+        mergedSegments.map((s) => `${s.start.toFixed(2)}s-${s.end.toFixed(2)}s`)
       );
 
-      return voiceSegments;
+      return mergedSegments;
     } catch (error) {
       console.error("Error detecting voice activity:", error);
-      return []; // Return empty array if detection fails
+      return [];
     }
   }
 
@@ -318,47 +332,33 @@ export class AudioCombiner {
         "wav"
       );
 
-      // Create filter complex to remove voice segments
+      // Create a more sophisticated filter complex for voice removal
       let filterComplex = "";
 
-      // Generate ambient noise to replace speech segments
-      // Use anoisesrc to create subtle background noise
+      // Generate ambient noise with spectral characteristics similar to the background
       filterComplex += `anoisesrc=duration=${bgAnalysis.duration}:color=brown:seed=42:sample_rate=${bgAnalysis.format.sampleRate}[noise];`;
-      filterComplex += `[noise]volume=0.05[quietnoise];`; // Very quiet ambient noise
+      filterComplex += `[noise]volume=0.03[quietnoise];`; // Even quieter ambient noise
 
       // Start with the original background
       filterComplex += `[0:a]`;
 
-      // For each voice segment, replace with quiet noise
-      for (let i = 0; i < voiceSegments.length; i++) {
-        const segment = voiceSegments[i];
-        const start = segment.start;
-        const end = segment.end;
-
-        // Create a segment of quiet noise for this time range
-        filterComplex += `[quietnoise]atrim=start=${start}:end=${end},asetpts=PTS-STARTPTS[replace${i}];`;
-
-        // Mix the replacement into the background at the correct time
-        filterComplex += `areplace=start=${start}:end=${end}[temp${i}];`;
-
-        // Chain the replacements
-        if (i < voiceSegments.length - 1) {
-          filterComplex += `[temp${i}]`;
-        }
-      }
-
-      // Simplified approach: use volume ducking during voice segments
+      // Create a more sophisticated ducking filter
       let duckingFilter = "[0:a]";
 
       for (const segment of voiceSegments) {
-        // Significantly reduce volume during detected speech segments
-        duckingFilter += `volume=enable='between(t,${segment.start},${segment.end})':volume=0.1,`;
+        // Add a fade in/out to the ducking to make it more natural
+        const fadeDuration = 0.1; // 100ms fade
+        const startTime = Math.max(0, segment.start - fadeDuration);
+        const endTime = segment.end + fadeDuration;
+        
+        // Create a smooth volume curve for the ducking
+        duckingFilter += `volume=enable='between(t,${startTime},${endTime})':volume='if(between(t,${startTime},${segment.start}),1-(t-${startTime})/${fadeDuration}*0.9,if(between(t,${segment.end},${endTime}),(t-${segment.end})/${fadeDuration}*0.9,0.1))',`;
       }
 
       // Remove trailing comma and add output label
       duckingFilter = duckingFilter.replace(/,$/, "") + "[out]";
 
-      // Execute ffmpeg to create clean background
+      // Execute ffmpeg with the enhanced filter
       await execAsync(
         `ffmpeg -threads 2 -i "${backgroundPath}" -filter_complex "${duckingFilter}" -map "[out]" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${cleanBackgroundPath}"`
       );
@@ -366,12 +366,19 @@ export class AudioCombiner {
       // Verify the output file
       await this.fileProcessor.verifyFile(cleanBackgroundPath);
 
+      // Double-check for any remaining voice activity
+      const remainingVoiceSegments = await this.detectVoiceActivity(cleanBackgroundPath);
+      if (remainingVoiceSegments.length > 0) {
+        console.log("Detected remaining voice activity, applying additional cleanup...");
+        return this.removeSpeechFromBackground(cleanBackgroundPath, remainingVoiceSegments, bgAnalysis);
+      }
+
       console.log("Successfully created speech-free background audio");
       return cleanBackgroundPath;
     } catch (error) {
       console.error("Error removing speech from background:", error);
       console.log("Falling back to original background audio");
-      return backgroundPath; // Fallback to original if processing fails
+      return backgroundPath;
     }
   }
 
