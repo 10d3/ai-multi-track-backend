@@ -48,8 +48,6 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# insatll librosa and soundfile
-RUN pip3 install librosa==0.8.1 SoundFile==0.10.3.post1
 
 # Create and activate Python virtual environment
 RUN python3 -m venv /opt/venv
