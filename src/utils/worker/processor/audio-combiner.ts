@@ -161,11 +161,11 @@ export class AudioCombiner {
         }:duration=first[speechmix];`;
       }
 
-      // Reduce background volume significantly to make speech more prominent
-      filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=0.2[bg];`;
+      // Keep background at original volume
+      filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=1.0[bg];`;
 
-      // Final mix of speech and clean background - with speech prominence
-      filterComplex += `[speechmix][bg]amix=inputs=2:duration=first[out]`;
+      // Final mix of speech and background - with original background volume
+      filterComplex += `[speechmix][bg]amix=inputs=2:duration=first:weights=0.8 0.2[out]`;
 
       // Create input arguments string for ffmpeg
       let inputArgs = `-threads 2 -i "${silentBgPath}" `;
