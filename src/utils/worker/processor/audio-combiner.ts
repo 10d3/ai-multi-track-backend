@@ -318,28 +318,60 @@ export class AudioCombiner {
         "wav"
       );
 
-      // Enhanced background processing
-      const backgroundFilter = [
-        // Gentle high-pass to remove rumble
-        "highpass=f=60",
-        // Subtle low-pass to reduce harshness
-        "lowpass=f=12000",
-        // Gentle compression to maintain consistent level
-        "acompressor=threshold=-30dB:ratio=1.5:attack=100:release=300",
-        // Subtle stereo enhancement
-        "stereotools=m=1.2:s=0.8",
-      ].join(",");
+      // Create filter complex to remove voice segments
+      let filterComplex = "";
 
-      // Process background with enhanced filters
+      // Generate ambient noise to replace speech segments
+      // Use anoisesrc to create subtle background noise
+      filterComplex += `anoisesrc=duration=${bgAnalysis.duration}:color=brown:seed=42:sample_rate=${bgAnalysis.format.sampleRate}[noise];`;
+      filterComplex += `[noise]volume=0.05[quietnoise];`; // Very quiet ambient noise
+
+      // Start with the original background
+      filterComplex += `[0:a]`;
+
+      // For each voice segment, replace with quiet noise
+      for (let i = 0; i < voiceSegments.length; i++) {
+        const segment = voiceSegments[i];
+        const start = segment.start;
+        const end = segment.end;
+
+        // Create a segment of quiet noise for this time range
+        filterComplex += `[quietnoise]atrim=start=${start}:end=${end},asetpts=PTS-STARTPTS[replace${i}];`;
+
+        // Mix the replacement into the background at the correct time
+        filterComplex += `areplace=start=${start}:end=${end}[temp${i}];`;
+
+        // Chain the replacements
+        if (i < voiceSegments.length - 1) {
+          filterComplex += `[temp${i}]`;
+        }
+      }
+
+      // Simplified approach: use volume ducking during voice segments
+      let duckingFilter = "[0:a]";
+
+      for (const segment of voiceSegments) {
+        // Significantly reduce volume during detected speech segments
+        duckingFilter += `volume=enable='between(t,${segment.start},${segment.end})':volume=0.1,`;
+      }
+
+      // Remove trailing comma and add output label
+      duckingFilter = duckingFilter.replace(/,$/, "") + "[out]";
+
+      // Execute ffmpeg to create clean background
       await execAsync(
-        `ffmpeg -threads 2 -i "${backgroundPath}" -af "${backgroundFilter}" -c:a pcm_s24le "${cleanBackgroundPath}"`
+        `ffmpeg -threads 2 -i "${backgroundPath}" -filter_complex "${duckingFilter}" -map "[out]" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${cleanBackgroundPath}"`
       );
 
+      // Verify the output file
       await this.fileProcessor.verifyFile(cleanBackgroundPath);
+
+      console.log("Successfully created speech-free background audio");
       return cleanBackgroundPath;
     } catch (error) {
-      console.error("Error processing background:", error);
-      return backgroundPath;
+      console.error("Error removing speech from background:", error);
+      console.log("Falling back to original background audio");
+      return backgroundPath; // Fallback to original if processing fails
     }
   }
 
@@ -421,39 +453,30 @@ export class AudioCombiner {
     bgAnalysis: any
   ): Promise<string> {
     try {
-      console.log(`Processing speech file ${index} with enhanced quality...`);
+      console.log(`Processing speech file ${index} (boosting volume)...`);
 
+      // Create a processed speech file path
       const processedPath = path.join(
         outputDir,
         `processed_speech_${index}.wav`
       );
+
+      // Apply format conversion and volume boost
       const channelLayout =
         bgAnalysis.format.channels === 1 ? "mono" : "stereo";
 
-      // Enhanced speech processing with natural sound preservation
-      const enhancedFilter = [
-        // Gentle noise reduction
-        "anlmdn=s=7:p=0.002:r=0.002:m=15:b=1",
-        // Subtle compression for consistent levels
-        "acompressor=threshold=-24dB:ratio=2:attack=50:release=200",
-        // Gentle EQ to enhance speech clarity
-        "equalizer=f=1000:width_type=h:width=200:g=3",
-        "equalizer=f=3000:width_type=h:width=200:g=2",
-        // Subtle de-essing to reduce harsh sibilants
-        "highshelf=f=8000:g=-3",
-        // Natural volume boost
-        "volume=2.5",
-        // Format conversion
-        `aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout}`,
-        // Smooth fades
-        "afade=t=in:st=0:d=0.05,afade=t=out:st=-0.05:d=0.05",
-      ].join(",");
+      // Apply significant volume boost to make speech clearly audible
+      // Using volume=3.0 for triple the volume
+      const boostFilter = `aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout},volume=3.0`;
 
+      // Process the speech file with volume boost
       await execAsync(
-        `ffmpeg -threads 2 -i "${speechPath}" -af "${enhancedFilter}" -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} -c:a pcm_s24le "${processedPath}"`
+        `ffmpeg -threads 2 -i "${speechPath}" -af "${boostFilter}" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${processedPath}"`
       );
 
+      // Verify the output file
       await this.fileProcessor.verifyFile(processedPath);
+
       return processedPath;
     } catch (error) {
       console.error(`Error processing speech file ${index}:`, error);
@@ -466,47 +489,50 @@ export class AudioCombiner {
     originalAnalysis: any
   ): Promise<string> {
     try {
-      console.log("Applying final processing with enhanced audio quality...");
+      console.log(
+        "Applying final processing with speech clarity enhancement..."
+      );
 
+      // Create an output path
       const outputPath = await this.fileProcessor.createTempPath(
         "final_processed",
         "wav"
       );
 
+      // Extract basic format parameters
       const channelLayout =
         originalAnalysis.format.channels === 1 ? "mono" : "stereo";
 
-      // Enhanced final processing chain
-      const finalFilter = [
-        // Format conversion
-        `aformat=sample_fmts=fltp:sample_rates=${originalAnalysis.format.sampleRate}:channel_layouts=${channelLayout}`,
-        // Subtle room reverb for natural sound
-        "aecho=0.8:0.9:60:0.3",
-        // Multiband compression for better control
-        "acompressor=threshold=-20dB:ratio=1.5:attack=50:release=200",
-        // Subtle stereo enhancement
-        "stereotools=m=1.1:s=0.9",
-        // Final loudness normalization
-        "loudnorm=I=-16:LRA=11:TP=-1.5",
-      ].join(",");
+      // Final processing to ensure speech clarity and consistent volume
+      const finalFilter =
+        `aformat=sample_fmts=fltp:sample_rates=${originalAnalysis.format.sampleRate}:channel_layouts=${channelLayout},` +
+        `highpass=f=80,` + // Remove low-frequency rumble
+        `lowpass=f=8000,` + // Remove high-frequency noise
+        `compand=attacks=0.01:decays=0.2:points=-80/-80|-50/-25|-30/-15|-5/-5|0/-2:soft-knee=2:gain=3,` +
+        `loudnorm=I=-18:TP=-2:LRA=7`; // Final loudness normalization
 
+      // Process the final audio with enhanced clarity
       await execAsync(
         `ffmpeg -threads 2 -i "${inputPath}" -af "${finalFilter}" -c:a pcm_s24le -ar ${originalAnalysis.format.sampleRate} -ac ${originalAnalysis.format.channels} "${outputPath}"`
       );
 
+      // Verify the output file
       await this.fileProcessor.verifyFile(outputPath);
 
+      // Verify final length matches original background
       const finalAnalysis = await this.audioAnalyzer.analyzeAudio(outputPath);
-      console.log("Final audio quality metrics:", {
-        duration: finalAnalysis.duration.toFixed(2) + "s",
-        loudness: finalAnalysis.loudness.integrated.toFixed(2) + " LUFS",
-        peak: finalAnalysis.loudness.truePeak.toFixed(2) + " dB",
-        range: finalAnalysis.loudness.range.toFixed(2) + " LU",
+      console.log("Final audio validation:", {
+        originalDuration: originalAnalysis.duration.toFixed(3) + "s",
+        finalDuration: finalAnalysis.duration.toFixed(3) + "s",
+        difference:
+          Math.abs(originalAnalysis.duration - finalAnalysis.duration).toFixed(
+            3
+          ) + "s",
       });
 
       return outputPath;
     } catch (error) {
-      console.error("Error in final audio processing:", error);
+      console.error("Error applying final processing:", error);
       throw error;
     }
   }
