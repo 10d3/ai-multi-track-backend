@@ -165,11 +165,11 @@ export class AudioCombiner {
         }:duration=first[speechmix];`;
       }
 
-      // Keep background at original volume
+      // Keep background at original volume (1.0 = 100%)
       filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=1.0[bg];`;
 
-      // Final mix of speech and background - with original background volume
-      filterComplex += `[speechmix][bg]amix=inputs=2:duration=first:weights=0.8 0.2[out]`;
+      // Final mix of speech and background - with equal weights
+      filterComplex += `[speechmix][bg]amix=inputs=2:duration=first:weights=0.5 0.5[out]`;
 
       // Create input arguments string for ffmpeg
       let inputArgs = `-threads 2 -i "${silentBgPath}" `;
