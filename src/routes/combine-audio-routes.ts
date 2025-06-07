@@ -71,11 +71,12 @@ router.post("/", auth, async (req, res) => {
     fs.mkdirSync(spleeterOutputDir, { recursive: true });
 
     // Call the Python script with arguments
-    const spleeterCommand = `python3 ./src/script/separate_audio.py "${convertedOriginalAudioPath}" "${spleeterOutputDir}"`;
+    // const spleeterCommand = `python3 ./src/script/separate_audio.py "${convertedOriginalAudioPath}" "${spleeterOutputDir}"`;
+    const demucsCommand = `python3 ./src/script/separate_audio_demucs.py "${convertedOriginalAudioPath}" "${spleeterOutputDir}"`;
     // console.log("Spleeter Python Command:", spleeterCommand);
 
     try {
-      execSync(spleeterCommand);
+      execSync(demucsCommand);
     } catch (error) {
       console.error("Error executing Spleeter Python script:", error);
       res.status(500).json({ error: error });
