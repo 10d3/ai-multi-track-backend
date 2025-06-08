@@ -10,7 +10,7 @@ import fs from "fs/promises";
 import { readFileSync } from "fs";
 import { exec } from "child_process";
 import { promisify } from "util";
-import { calculateSpeakingRate, type SpeakingRateResult } from "../../lib/utils";
+import { calculateSpeakingRate } from "../../lib/utils";
 // import { env } from "@env";
 
 // Retry configuration for API calls
@@ -345,12 +345,11 @@ export class ZyphraTTS {
         }
       }
 
-      const result:SpeakingRateResult = await calculateSpeakingRate({translatedText: textToSpeech, start, end})
-      const speakingRate = result.speakingRate
+      const speaking_rate = calculateSpeakingRate({translatedText: textToSpeech, start, end})
 
       const baseParams: TTSParams = {
         text: textToSpeech,
-        speaking_rate : speakingRate,
+        speaking_rate: 15,
         mime_type: "audio/mp3",
         language_iso_code: language_iso_code,
       };
