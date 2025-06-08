@@ -378,79 +378,72 @@ export class AudioCombiner {
   /**
    * Resolve overlapping speech segments by adjusting their timing
    */
-  // private async resolveOverlappingSegments(
-  //   segments: SpeechSegment[]
-  // ): Promise<SpeechSegment[]> {
-  //   const resolvedSegments = [...segments];
-  //   const minGapBetweenSegments = 0.1; // 100ms minimum gap between segments
-
-  //   for (let i = 0; i < resolvedSegments.length - 1; i++) {
-  //     const current = resolvedSegments[i];
-  //     const next = resolvedSegments[i + 1];
-
-  //     const currentEnd = current.adjustedEnd || current.end;
-  //     const nextStart = next.adjustedStart || next.start;
-
-  //     // Check if segments overlap or are too close
-  //     if (currentEnd + minGapBetweenSegments > nextStart) {
-  //       console.log(
-  //         `Resolving overlap between segments ${current.originalIndex} and ${next.originalIndex}`
-  //       );
-
-  //       const overlapDuration = currentEnd - nextStart + minGapBetweenSegments;
-  //       const currentDuration =
-  //         currentEnd - (current.adjustedStart || current.start);
-  //       const nextDuration = (next.adjustedEnd || next.end) - nextStart;
-
-  //       // Decide how to resolve based on segment durations
-  //       if (currentDuration > nextDuration) {
-  //         // Shorten the current segment
-  //         current.adjustedEnd = nextStart - minGapBetweenSegments;
-  //         console.log(
-  //           `Shortened segment ${
-  //             current.originalIndex
-  //           } to end at ${current.adjustedEnd.toFixed(2)}s`
-  //         );
-  //       } else {
-  //         // Delay the next segment
-  //         const delay = currentEnd + minGapBetweenSegments - nextStart;
-  //         next.adjustedStart = nextStart + delay;
-  //         next.adjustedEnd = (next.adjustedEnd || next.end) + delay;
-  //         console.log(
-  //           `Delayed segment ${
-  //             next.originalIndex
-  //           } to start at ${next.adjustedStart.toFixed(2)}s`
-  //         );
-  //       }
-
-  //       // Validate the adjusted segment doesn't have negative duration
-  //       if (
-  //         current.adjustedEnd &&
-  //         current.adjustedEnd <= (current.adjustedStart || current.start)
-  //       ) {
-  //         console.warn(
-  //           `Segment ${current.originalIndex} would have negative duration, skipping`
-  //         );
-  //         // Mark for removal by setting a flag
-  //         (current as any).skip = true;
-  //       }
-  //     }
-  //   }
-
-  //   // Filter out segments marked for skipping and segments that are too short
-  //   return resolvedSegments.filter((segment) => {
-  //     const duration =
-  //       (segment.adjustedEnd || segment.end) -
-  //       (segment.adjustedStart || segment.start);
-  //     return !(segment as any).skip && duration > 0.1; // Keep segments longer than 100ms
-  //   });
-  // }
-
   private async resolveOverlappingSegments(
     segments: SpeechSegment[]
   ): Promise<SpeechSegment[]> {
-    // Simply return the original segments without any adjustments
-    return segments;
+    const resolvedSegments = [...segments];
+    const minGapBetweenSegments = 0.1; // 100ms minimum gap between segments
+
+    for (let i = 0; i < resolvedSegments.length - 1; i++) {
+      const current = resolvedSegments[i];
+      const next = resolvedSegments[i + 1];
+
+      const currentEnd = current.adjustedEnd || current.end;
+      const nextStart = next.adjustedStart || next.start;
+
+      // Check if segments overlap or are too close
+      if (currentEnd + minGapBetweenSegments > nextStart) {
+        console.log(
+          `Resolving overlap between segments ${current.originalIndex} and ${next.originalIndex}`
+        );
+
+        const overlapDuration = currentEnd - nextStart + minGapBetweenSegments;
+        const currentDuration =
+          currentEnd - (current.adjustedStart || current.start);
+        const nextDuration = (next.adjustedEnd || next.end) - nextStart;
+
+        // Decide how to resolve based on segment durations
+        if (currentDuration > nextDuration) {
+          // Shorten the current segment
+          current.adjustedEnd = nextStart - minGapBetweenSegments;
+          console.log(
+            `Shortened segment ${
+              current.originalIndex
+            } to end at ${current.adjustedEnd.toFixed(2)}s`
+          );
+        } else {
+          // Delay the next segment
+          const delay = currentEnd + minGapBetweenSegments - nextStart;
+          next.adjustedStart = nextStart + delay;
+          next.adjustedEnd = (next.adjustedEnd || next.end) + delay;
+          console.log(
+            `Delayed segment ${
+              next.originalIndex
+            } to start at ${next.adjustedStart.toFixed(2)}s`
+          );
+        }
+
+        // Validate the adjusted segment doesn't have negative duration
+        if (
+          current.adjustedEnd &&
+          current.adjustedEnd <= (current.adjustedStart || current.start)
+        ) {
+          console.warn(
+            `Segment ${current.originalIndex} would have negative duration, skipping`
+          );
+          // Mark for removal by setting a flag
+          (current as any).skip = true;
+        }
+      }
+    }
+
+    // Filter out segments marked for skipping and segments that are too short
+    return resolvedSegments.filter((segment) => {
+      const duration =
+        (segment.adjustedEnd || segment.end) -
+        (segment.adjustedStart || segment.start);
+      return !(segment as any).skip && duration > 0.1; // Keep segments longer than 100ms
+    });
   }
 
   private async processSpeechForConsistency(
