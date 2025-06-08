@@ -345,11 +345,12 @@ export class ZyphraTTS {
         }
       }
 
-      const speaking_rate = calculateSpeakingRate({translatedText: textToSpeech, start, end})
+      const results = calculateSpeakingRate({translatedText: textToSpeech, start, end})
+      const speakingRate = results.speakingRate
 
       const baseParams: TTSParams = {
         text: textToSpeech,
-        speaking_rate: 15,
+        speaking_rate: speakingRate,
         mime_type: "audio/mp3",
         language_iso_code: language_iso_code,
       };
