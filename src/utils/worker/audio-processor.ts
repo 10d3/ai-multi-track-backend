@@ -229,7 +229,7 @@ export class AudioProcessor {
         if (request.voice_id === "cloning-voice") {
           if (!referenceAudio) {
             // Final safety check - if we still don't have reference audio, switch to default voice
-            request.voice_id = "en-US-Neural2-F";
+            request.voice_id = "american-male";
             console.warn(
               `[AudioProcessor] No reference audio available for cloning. Using default voice.`
             );
