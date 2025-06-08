@@ -5,6 +5,7 @@ import type { FileProcessor } from "./file-processor";
 import type { AudioAnalyzer } from "./audio-analyzer";
 import type { Transcript } from "../../types/type";
 import fs from "fs/promises";
+import { calculateSpeakingRate } from "../../lib/utils";
 
 const execAsync = promisify(exec);
 
@@ -122,7 +123,8 @@ export class AudioCombiner {
       // Resolve overlapping segments
       console.log("Resolving overlapping speech segments...");
       speechSegmentPaths = await this.resolveOverlappingSegments(
-        speechSegmentPaths
+        speechSegmentPaths,
+        transcript
       );
 
       // Log the processed segments
@@ -379,50 +381,62 @@ export class AudioCombiner {
    * Resolve overlapping speech segments by adjusting their timing
    */
   private async resolveOverlappingSegments(
-    segments: SpeechSegment[]
+    segments: SpeechSegment[],
+    transcript: Transcript[] // Add transcript parameter
   ): Promise<SpeechSegment[]> {
     const resolvedSegments = [...segments];
     const minGapBetweenSegments = 0.1; // 100ms minimum gap between segments
-
+  
     for (let i = 0; i < resolvedSegments.length - 1; i++) {
       const current = resolvedSegments[i];
       const next = resolvedSegments[i + 1];
-
+  
+      // Get the corresponding transcript entries
+      const currentTranscript = transcript[current.originalIndex];
+      const nextTranscript = transcript[next.originalIndex];
+  
+      // Calculate speaking rates for both segments
+      const currentRate = await calculateSpeakingRate({
+        translatedText: currentTranscript.text,
+        start: current.start,
+        end: current.end
+      });
+  
+      const nextRate = await calculateSpeakingRate({
+        translatedText: nextTranscript.text,
+        start: next.start,
+        end: next.end
+      });
+  
       const currentEnd = current.adjustedEnd || current.end;
       const nextStart = next.adjustedStart || next.start;
-
+  
       // Check if segments overlap or are too close
       if (currentEnd + minGapBetweenSegments > nextStart) {
         console.log(
           `Resolving overlap between segments ${current.originalIndex} and ${next.originalIndex}`
         );
-
+  
         const overlapDuration = currentEnd - nextStart + minGapBetweenSegments;
-        const currentDuration =
-          currentEnd - (current.adjustedStart || current.start);
+        const currentDuration = currentEnd - (current.adjustedStart || current.start);
         const nextDuration = (next.adjustedEnd || next.end) - nextStart;
-
-        // Decide how to resolve based on segment durations
-        if (currentDuration > nextDuration) {
+  
+        // Use speaking rates to help decide how to resolve overlap
+        // If current segment has higher speaking rate, it's more important to maintain its timing
+        if (currentRate.speakingRate > nextRate.speakingRate) {
+          // Shorten the next segment instead of the current one
+          next.adjustedStart = currentEnd + minGapBetweenSegments;
+          console.log(
+            `Adjusted next segment ${next.originalIndex} to start at ${next.adjustedStart.toFixed(2)}s due to higher speaking rate in current segment`
+          );
+        } else {
           // Shorten the current segment
           current.adjustedEnd = nextStart - minGapBetweenSegments;
           console.log(
-            `Shortened segment ${
-              current.originalIndex
-            } to end at ${current.adjustedEnd.toFixed(2)}s`
-          );
-        } else {
-          // Delay the next segment
-          const delay = currentEnd + minGapBetweenSegments - nextStart;
-          next.adjustedStart = nextStart + delay;
-          next.adjustedEnd = (next.adjustedEnd || next.end) + delay;
-          console.log(
-            `Delayed segment ${
-              next.originalIndex
-            } to start at ${next.adjustedStart.toFixed(2)}s`
+            `Shortened segment ${current.originalIndex} to end at ${current.adjustedEnd.toFixed(2)}s`
           );
         }
-
+  
         // Validate the adjusted segment doesn't have negative duration
         if (
           current.adjustedEnd &&
@@ -431,12 +445,11 @@ export class AudioCombiner {
           console.warn(
             `Segment ${current.originalIndex} would have negative duration, skipping`
           );
-          // Mark for removal by setting a flag
           (current as any).skip = true;
         }
       }
     }
-
+  
     // Filter out segments marked for skipping and segments that are too short
     return resolvedSegments.filter((segment) => {
       const duration =
