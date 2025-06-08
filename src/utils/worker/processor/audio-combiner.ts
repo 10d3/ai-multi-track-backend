@@ -382,10 +382,10 @@ export class AudioCombiner {
    */
   private async resolveOverlappingSegments(
     segments: SpeechSegment[],
-    transcript: Transcript[] // Add transcript parameter
+    transcript: Transcript[]
   ): Promise<SpeechSegment[]> {
     const resolvedSegments = [...segments];
-    const minGapBetweenSegments = 0.1; // 100ms minimum gap between segments
+    const minGapBetweenSegments = 0.15; // Increased to 150ms for better separation
   
     for (let i = 0; i < resolvedSegments.length - 1; i++) {
       const current = resolvedSegments[i];
@@ -395,14 +395,14 @@ export class AudioCombiner {
       const currentTranscript = transcript[current.originalIndex];
       const nextTranscript = transcript[next.originalIndex];
   
-      // Calculate speaking rates for both segments
-      const currentRate = await calculateSpeakingRate({
+      // Calculate speaking rates
+      const currentRate = calculateSpeakingRate({
         translatedText: currentTranscript.text,
         start: current.start,
         end: current.end
       });
   
-      const nextRate = await calculateSpeakingRate({
+      const nextRate = calculateSpeakingRate({
         translatedText: nextTranscript.text,
         start: next.start,
         end: next.end
@@ -411,7 +411,7 @@ export class AudioCombiner {
       const currentEnd = current.adjustedEnd || current.end;
       const nextStart = next.adjustedStart || next.start;
   
-      // Check if segments overlap or are too close
+      // Check for overlap
       if (currentEnd + minGapBetweenSegments > nextStart) {
         console.log(
           `Resolving overlap between segments ${current.originalIndex} and ${next.originalIndex}`
@@ -421,13 +421,22 @@ export class AudioCombiner {
         const currentDuration = currentEnd - (current.adjustedStart || current.start);
         const nextDuration = (next.adjustedEnd || next.end) - nextStart;
   
-        // Use speaking rates to help decide how to resolve overlap
-        // If current segment has higher speaking rate, it's more important to maintain its timing
-        if (currentRate.speakingRate > nextRate.speakingRate) {
-          // Shorten the next segment instead of the current one
-          next.adjustedStart = currentEnd + minGapBetweenSegments;
+        // Decision making based on multiple factors
+        const shouldDelayNext = 
+          // If next segment has more words per second, it's more important to maintain its timing
+          nextRate.wordsPerSecond > currentRate.wordsPerSecond ||
+          // If current segment is longer, it's more important to maintain its timing
+          currentDuration > nextDuration * 1.5 ||
+          // If next segment is very short, it's better to delay it
+          nextDuration < 0.5;
+  
+        if (shouldDelayNext) {
+          // Delay the next segment
+          const delay = currentEnd + minGapBetweenSegments - nextStart;
+          next.adjustedStart = nextStart + delay;
+          next.adjustedEnd = (next.adjustedEnd || next.end) + delay;
           console.log(
-            `Adjusted next segment ${next.originalIndex} to start at ${next.adjustedStart.toFixed(2)}s due to higher speaking rate in current segment`
+            `Delayed segment ${next.originalIndex} to start at ${next.adjustedStart.toFixed(2)}s`
           );
         } else {
           // Shorten the current segment
@@ -437,7 +446,7 @@ export class AudioCombiner {
           );
         }
   
-        // Validate the adjusted segment doesn't have negative duration
+        // Validate adjustments
         if (
           current.adjustedEnd &&
           current.adjustedEnd <= (current.adjustedStart || current.start)
@@ -447,10 +456,17 @@ export class AudioCombiner {
           );
           (current as any).skip = true;
         }
+  
+        // Add crossfade for smoother transitions
+        if (!(current as any).skip) {
+          const crossfadeDuration = 0.05; // 50ms crossfade
+          current.adjustedEnd = (current.adjustedEnd || current.end) + crossfadeDuration;
+          next.adjustedStart = (next.adjustedStart || next.start) - crossfadeDuration;
+        }
       }
     }
   
-    // Filter out segments marked for skipping and segments that are too short
+    // Filter out invalid segments
     return resolvedSegments.filter((segment) => {
       const duration =
         (segment.adjustedEnd || segment.end) -
