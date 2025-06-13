@@ -152,23 +152,30 @@ export class AudioCombiner {
         )}|${Math.round(startTime * 1000)}[speech${i}];`;
       }
 
-      // Build mix chain
+      // Build mix chain with better volume management
       if (speechSegmentPaths.length > 0) {
         filterComplex += `[0:a]`;
         for (let i = 0; i < speechSegmentPaths.length; i++) {
           filterComplex += `[speech${i}]`;
         }
-        // Mix all speech segments with silent background
+        // Mix all speech segments with silent background - speech should be dominant
         filterComplex += `amix=inputs=${
           speechSegmentPaths.length + 1
-        }:duration=first[speechmix];`;
+        }:duration=first:weights=`;
+        
+        // Silent background gets minimal weight, speech gets full weight
+        filterComplex += `0.1`;
+        for (let i = 0; i < speechSegmentPaths.length; i++) {
+          filterComplex += ` 1.0`; // Each speech segment gets full weight
+        }
+        filterComplex += `[speechmix];`;
       }
 
-      // Keep background at original volume (1.0 = 100%)
-      filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=1.0[bg];`;
+      // Keep background at reduced volume to not overpower speech
+      filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=0.3[bg];`;
 
-      // Final mix of speech and background - with equal weights
-      filterComplex += `[speechmix][bg]amix=inputs=2:duration=first:weights=0.5 0.5[out]`;
+      // Final mix - prioritize speech over background
+      filterComplex += `[speechmix][bg]amix=inputs=2:duration=first:weights=1.0 0.3[out]`;
 
       // Create input arguments string for ffmpeg
       let inputArgs = `-threads 2 -i "${silentBgPath}" `;
@@ -187,6 +194,10 @@ export class AudioCombiner {
         "wav"
       );
 
+      // Log the filter complex for debugging
+      console.log("Filter complex:", filterComplex.replace(/\s+/g, " "));
+      console.log("Input arguments:", inputArgs);
+      
       // Execute ffmpeg with single filter complex that preserves exact duration
       await execAsync(
         `ffmpeg ${inputArgs} -filter_complex "${filterComplex.replace(
@@ -196,6 +207,17 @@ export class AudioCombiner {
           bgAnalysis.format.sampleRate
         } -ac ${bgAnalysis.format.channels} "${finalPath}"`
       );
+      
+      // Check if speech is audible by analyzing the output
+      console.log("Analyzing final audio levels...");
+      try {
+        const { stderr } = await execAsync(
+          `ffmpeg -i "${finalPath}" -af "volumedetect" -f null - 2>&1`
+        );
+        console.log("Final audio volume analysis:", stderr.match(/mean_volume: [-\d.]+/)?.[0] || "No volume data");
+      } catch (error) {
+        console.log("Could not analyze final audio levels");
+      }
 
       // Verify the output file
       await this.fileProcessor.verifyFile(finalPath);
@@ -433,9 +455,24 @@ export class AudioCombiner {
     try {
       console.log(`Processing speech file ${index} to match target duration ${targetDuration.toFixed(3)}s...`);
 
-      // First, get the actual TTS duration
+      // First, get the actual TTS duration and verify the file
       const actualDuration = await this.getTTSFileDuration(speechPath);
       console.log(`TTS file ${index}: actual=${actualDuration.toFixed(3)}s, target=${targetDuration.toFixed(3)}s`);
+      
+      // Debug: Check if original TTS file has content
+      try {
+        const { stderr } = await execAsync(
+          `ffmpeg -i "${speechPath}" -af "volumedetect" -f null - 2>&1`
+        );
+        const volumeMatch = stderr.match(/mean_volume: ([-\d.]+)/);
+        console.log(`Original TTS ${index} volume: ${volumeMatch?.[1] || 'unknown'}dB`);
+        
+        if (volumeMatch && parseFloat(volumeMatch[1]) < -50) {
+          console.warn(`Original TTS ${index} has very low volume - might be silent or corrupted`);
+        }
+      } catch (error) {
+        console.log(`Could not analyze original TTS ${index} volume`);
+      }
 
       // Create a processed speech file path
       const processedPath = path.join(outputDir, `processed_speech_${index}.wav`);
@@ -480,18 +517,35 @@ export class AudioCombiner {
         console.log(`Chained slow down: ${tempoFilters.join(',')}`);
       }
 
-      // Add volume boost and format conversion
+      // Add volume boost and format conversion - boost speech significantly
       const channelLayout = bgAnalysis.format.channels === 1 ? "mono" : "stereo";
-      filters.push(`volume=3.0`);
+      filters.push(`volume=5.0`); // Increased from 3.0 to 5.0 for better audibility
       filters.push(`aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout}`);
 
       // Combine all filters
       const filterString = filters.join(',');
 
-      // Process the speech file with duration matching and volume boost
-      await execAsync(
-        `ffmpeg -threads 2 -i "${speechPath}" -af "${filterString}" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${processedPath}"`
-      );
+      console.log(`Processing speech ${index} with filters: ${filterString}`);
+
+      try {
+        // Process the speech file with duration matching and volume boost
+        await execAsync(
+          `ffmpeg -threads 2 -i "${speechPath}" -af "${filterString}" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${processedPath}"`
+        );
+      } catch (error) {
+        console.error(`Error processing speech ${index} with filters, trying fallback method:`, error);
+        
+        // Fallback: try without speed adjustment, just volume boost
+        const fallbackFilters = [
+          `volume=5.0`,
+          `aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout}`
+        ];
+        
+        console.log(`Fallback processing speech ${index} without speed adjustment`);
+        await execAsync(
+          `ffmpeg -threads 2 -i "${speechPath}" -af "${fallbackFilters.join(',')}" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${processedPath}"`
+        );
+      }
 
       // Verify the output file and check final duration
       await this.fileProcessor.verifyFile(processedPath);
@@ -500,6 +554,23 @@ export class AudioCombiner {
       const durationDiff = Math.abs(finalDuration - targetDuration);
       
       console.log(`Speech ${index} final duration: ${finalDuration.toFixed(3)}s (diff: ${durationDiff.toFixed(3)}s)`);
+      
+      // Debug: Check if processed audio has actual content
+      try {
+        const { stderr } = await execAsync(
+          `ffmpeg -i "${processedPath}" -af "volumedetect" -f null - 2>&1`
+        );
+        const volumeMatch = stderr.match(/mean_volume: ([-\d.]+)/);
+        const maxVolumeMatch = stderr.match(/max_volume: ([-\d.]+)/);
+        console.log(`Speech ${index} volume check - mean: ${volumeMatch?.[1] || 'unknown'}, max: ${maxVolumeMatch?.[1] || 'unknown'}`);
+        
+        // If volume is too low, there might be an issue
+        if (volumeMatch && parseFloat(volumeMatch[1]) < -60) {
+          console.warn(`Speech ${index} has very low volume (${volumeMatch[1]}dB) - possible audio corruption`);
+        }
+      } catch (error) {
+        console.log(`Could not analyze volume for speech ${index}`);
+      }
       
       if (durationDiff > 0.1) {
         console.warn(`Duration mismatch for segment ${index}: expected ${targetDuration.toFixed(3)}s, got ${finalDuration.toFixed(3)}s`);
