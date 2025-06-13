@@ -299,9 +299,9 @@ export class AudioCombiner {
     originalAudioUrl: string,
     // transcript: Transcript[]
   ): Promise<string> {
-    const originalPath = await this.fileProcessor.downloadAndConvertAudio(
-      originalAudioUrl
-    );
+    // const originalPath = await this.fileProcessor.downloadAndConvertAudio(
+    //   originalAudioUrl
+    // );
     const spleeterOutputDir = await this.fileProcessor.createTempDir(
       "spleeter_output"
     );
@@ -309,7 +309,7 @@ export class AudioCombiner {
     try {
       const scriptPath = path.resolve("./src/script/separate_audio_demucs.py");
       await execAsync(
-        `python3 "${scriptPath}" "${originalPath}" "${spleeterOutputDir}"`
+        `python3 "${scriptPath}" "${originalAudioUrl}" "${spleeterOutputDir}"`
       );
 
       const subdirs = await fs.readdir(spleeterOutputDir);
