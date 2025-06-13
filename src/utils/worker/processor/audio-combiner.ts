@@ -500,31 +500,31 @@ export class AudioCombiner {
     bgAnalysis: any
   ): Promise<string> {
     try {
-      console.log(`Processing speech file ${index} (boosting volume)...`);
+      // console.log(`Processing speech file ${index} (boosting volume)...`);
 
-      // Create a processed speech file path
-      const processedPath = path.join(
-        outputDir,
-        `processed_speech_${index}.wav`
-      );
+      // // Create a processed speech file path
+      // const processedPath = path.join(
+      //   outputDir,
+      //   `processed_speech_${index}.wav`
+      // );
 
-      // Apply format conversion and volume boost
-      const channelLayout =
-        bgAnalysis.format.channels === 1 ? "mono" : "stereo";
+      // // Apply format conversion and volume boost
+      // const channelLayout =
+      //   bgAnalysis.format.channels === 1 ? "mono" : "stereo";
 
-      // Apply significant volume boost to make speech clearly audible
-      // Using volume=3.0 for triple the volume
-      const boostFilter = `aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout},volume=3.0`;
+      // // Apply significant volume boost to make speech clearly audible
+      // // Using volume=3.0 for triple the volume
+      // const boostFilter = `aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout},volume=3.0`;
 
-      // Process the speech file with volume boost
-      await execAsync(
-        `ffmpeg -threads 2 -i "${speechPath}" -af "${boostFilter}" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${processedPath}"`
-      );
+      // // Process the speech file with volume boost
+      // await execAsync(
+      //   `ffmpeg -threads 2 -i "${speechPath}" -af "${boostFilter}" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${processedPath}"`
+      // );
 
-      // Verify the output file
-      await this.fileProcessor.verifyFile(processedPath);
+      // // Verify the output file
+      // await this.fileProcessor.verifyFile(processedPath);
 
-      return processedPath;
+      return speechPath;
     } catch (error) {
       console.error(`Error processing speech file ${index}:`, error);
       throw error;
