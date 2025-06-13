@@ -292,7 +292,7 @@ export class ZyphraTTS {
     language_iso_code,
     referenceAudioPath,
     end,
-    start
+    start,
   }: ZyphraTTSRequest): Promise<string> {
     try {
       console.log(
@@ -345,8 +345,11 @@ export class ZyphraTTS {
         }
       }
 
-      const speaking_rate = calculateSpeakingRate({translatedText: textToSpeech, start, end})
-      
+      const speaking_rate = calculateSpeakingRate({
+        translatedText: textToSpeech,
+        start,
+        end,
+      });
 
       const baseParams: TTSParams = {
         text: textToSpeech,
