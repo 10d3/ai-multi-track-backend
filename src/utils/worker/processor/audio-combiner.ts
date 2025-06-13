@@ -500,13 +500,13 @@ export class AudioCombiner {
     bgAnalysis: any
   ): Promise<string> {
     try {
-      // console.log(`Processing speech file ${index} (boosting volume)...`);
+      console.log(`Processing speech file ${index} (boosting volume)...`);
 
-      // // Create a processed speech file path
-      // const processedPath = path.join(
-      //   outputDir,
-      //   `processed_speech_${index}.wav`
-      // );
+      // Create a processed speech file path
+      const processedPath = path.join(
+        outputDir,
+        `processed_speech_${index}.wav`
+      );
 
       // // Apply format conversion and volume boost
       // const channelLayout =
@@ -521,10 +521,14 @@ export class AudioCombiner {
       //   `ffmpeg -threads 2 -i "${speechPath}" -af "${boostFilter}" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${processedPath}"`
       // );
 
+      await execAsync(
+        `ffmpeg -i "${speechPath}" -af "loudnorm=I=-16:TP=-1.5:LRA=7,compand=attacks=0.05:decays=0.4:points=-80/-80|-24/-12|-12/-6|0/-3,limiter=level_in=1:level_out=0.9:limit=0.95" "${processedPath}"`
+      )
+
       // // Verify the output file
       // await this.fileProcessor.verifyFile(processedPath);
 
-      return speechPath;
+      return processedPath;
     } catch (error) {
       console.error(`Error processing speech file ${index}:`, error);
       throw error;
