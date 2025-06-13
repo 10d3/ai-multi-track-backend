@@ -60,10 +60,10 @@ export class AudioCombiner {
 
       // Create speech-free background audio
       console.log("Creating speech-free background audio...");
-      const cleanBackgroundPath = await this.removeSpeechFromBackground(
+      const cleanBackgroundPath = await this.separateOriginalAudio(
         backgroundPath,
-        voiceSegments,
-        bgAnalysis
+        // voiceSegments,
+        // bgAnalysis
       );
 
       // Create a temporary directory for the combined audio segments
@@ -292,6 +292,53 @@ export class AudioCombiner {
     } catch (error) {
       console.error("Error detecting voice activity:", error);
       return []; // Return empty array if detection fails
+    }
+  }
+
+  private async separateOriginalAudio(
+    originalAudioUrl: string,
+    // transcript: Transcript[]
+  ): Promise<string> {
+    const originalPath = await this.fileProcessor.downloadAndConvertAudio(
+      originalAudioUrl
+    );
+    const spleeterOutputDir = await this.fileProcessor.createTempDir(
+      "spleeter_output"
+    );
+
+    try {
+      const scriptPath = path.resolve("./src/script/separate_audio_demucs.py");
+      await execAsync(
+        `python3 "${scriptPath}" "${originalPath}" "${spleeterOutputDir}"`
+      );
+
+      const subdirs = await fs.readdir(spleeterOutputDir);
+      if (!subdirs.length) {
+        throw new Error("No subdirectories found in Spleeter output.");
+      }
+
+      // Get vocals for voice cloning
+      const vocalsPath = path.join(spleeterOutputDir, subdirs[0], "vocals.wav");
+      await this.fileProcessor.verifyFile(vocalsPath);
+
+      // Get accompaniment for background
+      const accompanimentPath = path.join(
+        spleeterOutputDir,
+        subdirs[0],
+        "accompaniment.wav"
+      );
+      await this.fileProcessor.verifyFile(accompanimentPath);
+
+      // Extract speaker references using transcript timestamps
+      // await this.speakerReferenceProcessor.extractSpeakerReferences(
+      //   vocalsPath,
+      //   transcript
+      // );
+
+      return accompanimentPath;
+    } catch (error) {
+      console.error("Spleeter processing failed:", error);
+      throw new Error(`Spleeter processing failed: ${error}`);
     }
   }
 

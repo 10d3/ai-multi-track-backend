@@ -33,6 +33,7 @@
     "ioredis": "^5.4.2",
     "jsonwebtoken": "^9.0.2",
     "mime-types": "^2.1.35",
+    "msgpack5": "^6.0.2",
     "multer": "^1.4.5-lts.1",
     "prisma": "5.17.0",
     "uploadthing": "^7.0.2",
