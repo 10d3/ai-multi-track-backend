@@ -416,15 +416,16 @@ export class AudioProcessor {
           console.log(`Checking job status (attempt ${attempts + 1}/${maxAttempts})...`);
           const statusResponse = await axios.get(statusUrl, { headers });
           
-          if (statusResponse.data.status === "completed") {
-            console.log("CleanVoice processing completed successfully");
+          // Check for both possible success status values: "completed" and "SUCCESS"
+          if (statusResponse.data.status === "completed" || statusResponse.data.status === "SUCCESS") {
+            console.log(`CleanVoice processing completed successfully with status: ${statusResponse.data.status}`);
             // Get the URL of the first processed file
             if (statusResponse.data.output && statusResponse.data.output.files && statusResponse.data.output.files.length > 0) {
               processedFileUrl = statusResponse.data.output.files[0];
               break;
             }
             throw new Error("No processed files found in completed job");
-          } else if (statusResponse.data.status === "failed") {
+          } else if (statusResponse.data.status === "failed" || statusResponse.data.status === "FAILED") {
             throw new Error(`CleanVoice processing failed: ${statusResponse.data.error || "Unknown error"}`);
           }
           
