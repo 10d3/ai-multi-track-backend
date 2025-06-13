@@ -455,24 +455,9 @@ export class AudioCombiner {
     try {
       console.log(`Processing speech file ${index} to match target duration ${targetDuration.toFixed(3)}s...`);
 
-      // First, get the actual TTS duration and verify the file
+      // First, get the actual TTS duration
       const actualDuration = await this.getTTSFileDuration(speechPath);
       console.log(`TTS file ${index}: actual=${actualDuration.toFixed(3)}s, target=${targetDuration.toFixed(3)}s`);
-      
-      // Debug: Check if original TTS file has content
-      try {
-        const { stderr } = await execAsync(
-          `ffmpeg -i "${speechPath}" -af "volumedetect" -f null - 2>&1`
-        );
-        const volumeMatch = stderr.match(/mean_volume: ([-\d.]+)/);
-        console.log(`Original TTS ${index} volume: ${volumeMatch?.[1] || 'unknown'}dB`);
-        
-        if (volumeMatch && parseFloat(volumeMatch[1]) < -50) {
-          console.warn(`Original TTS ${index} has very low volume - might be silent or corrupted`);
-        }
-      } catch (error) {
-        console.log(`Could not analyze original TTS ${index} volume`);
-      }
 
       // Create a processed speech file path
       const processedPath = path.join(outputDir, `processed_speech_${index}.wav`);
@@ -525,27 +510,10 @@ export class AudioCombiner {
       // Combine all filters
       const filterString = filters.join(',');
 
-      console.log(`Processing speech ${index} with filters: ${filterString}`);
-
-      try {
-        // Process the speech file with duration matching and volume boost
-        await execAsync(
-          `ffmpeg -threads 2 -i "${speechPath}" -af "${filterString}" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${processedPath}"`
-        );
-      } catch (error) {
-        console.error(`Error processing speech ${index} with filters, trying fallback method:`, error);
-        
-        // Fallback: try without speed adjustment, just volume boost
-        const fallbackFilters = [
-          `volume=5.0`,
-          `aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout}`
-        ];
-        
-        console.log(`Fallback processing speech ${index} without speed adjustment`);
-        await execAsync(
-          `ffmpeg -threads 2 -i "${speechPath}" -af "${fallbackFilters.join(',')}" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${processedPath}"`
-        );
-      }
+      // Process the speech file with duration matching and volume boost
+      await execAsync(
+        `ffmpeg -threads 2 -i "${speechPath}" -af "${filterString}" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${processedPath}"`
+      );
 
       // Verify the output file and check final duration
       await this.fileProcessor.verifyFile(processedPath);
@@ -554,23 +522,6 @@ export class AudioCombiner {
       const durationDiff = Math.abs(finalDuration - targetDuration);
       
       console.log(`Speech ${index} final duration: ${finalDuration.toFixed(3)}s (diff: ${durationDiff.toFixed(3)}s)`);
-      
-      // Debug: Check if processed audio has actual content
-      try {
-        const { stderr } = await execAsync(
-          `ffmpeg -i "${processedPath}" -af "volumedetect" -f null - 2>&1`
-        );
-        const volumeMatch = stderr.match(/mean_volume: ([-\d.]+)/);
-        const maxVolumeMatch = stderr.match(/max_volume: ([-\d.]+)/);
-        console.log(`Speech ${index} volume check - mean: ${volumeMatch?.[1] || 'unknown'}, max: ${maxVolumeMatch?.[1] || 'unknown'}`);
-        
-        // If volume is too low, there might be an issue
-        if (volumeMatch && parseFloat(volumeMatch[1]) < -60) {
-          console.warn(`Speech ${index} has very low volume (${volumeMatch[1]}dB) - possible audio corruption`);
-        }
-      } catch (error) {
-        console.log(`Could not analyze volume for speech ${index}`);
-      }
       
       if (durationDiff > 0.1) {
         console.warn(`Duration mismatch for segment ${index}: expected ${targetDuration.toFixed(3)}s, got ${finalDuration.toFixed(3)}s`);
