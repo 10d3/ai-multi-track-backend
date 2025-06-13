@@ -446,42 +446,60 @@ export class AudioCombiner {
       
       let filters = [];
       
-      // Apply duration adjustment if needed (only if difference is significant)
-      if (Math.abs(actualDuration - targetDuration) > 0.05) { // 50ms tolerance
-        console.log(`Duration mismatch for segment ${index}: actual=${actualDuration.toFixed(3)}s, target=${targetDuration.toFixed(3)}s, ratio=${durationRatio.toFixed(3)}`);
+      // Apply duration adjustment with natural speech preservation
+      const toleranceMs = 200; // 200ms tolerance
+      const durationDiffMs = Math.abs(actualDuration - targetDuration) * 1000;
+      
+      if (durationDiffMs > toleranceMs) {
+        console.log(`Duration mismatch for segment ${index}: actual=${actualDuration.toFixed(3)}s, target=${targetDuration.toFixed(3)}s, diff=${durationDiffMs.toFixed(0)}ms`);
         
-        // Check if the duration difference is reasonable for speed adjustment
-        if (durationRatio >= 0.5 && durationRatio <= 2.0) {
-          // Reasonable speed change - use atempo
+        // Strategy 1: For small differences, prefer natural speech ending over strict timing
+        if (actualDuration > targetDuration && (actualDuration - targetDuration) <= 0.5) {
+          // TTS overruns by up to 500ms - allow it to preserve natural ending
+          console.log(`Allowing natural speech ending (${((actualDuration - targetDuration) * 1000).toFixed(0)}ms overrun)`);
+          // Don't apply any duration filters - let it run naturally
+        } 
+        // Strategy 2: For reasonable differences, use gentle speed adjustment
+        else if (durationRatio >= 0.75 && durationRatio <= 1.35) {
+          // Conservative speed adjustment to avoid cutting off speech
           filters.push(`atempo=${durationRatio.toFixed(3)}`);
-          console.log(`Applying speed adjustment: atempo=${durationRatio.toFixed(3)}`);
-        } else if (durationRatio > 2.0 && durationRatio <= 4.0) {
-          // Moderate speed change - chain two atempo filters
-          const factor1 = 2.0;
+          console.log(`Gentle speed adjustment: atempo=${durationRatio.toFixed(3)}`);
+        }
+        // Strategy 3: For moderate differences, use chained atempo
+        else if (durationRatio > 1.35 && durationRatio <= 2.5) {
+          const factor1 = Math.min(1.8, Math.sqrt(durationRatio));
           const factor2 = durationRatio / factor1;
           filters.push(`atempo=${factor1.toFixed(3)},atempo=${factor2.toFixed(3)}`);
-          console.log(`Applying chained speed adjustment: atempo=${factor1.toFixed(3)},atempo=${factor2.toFixed(3)}`);
-        } else if (durationRatio < 0.5 && durationRatio >= 0.25) {
-          // Moderate slow down - chain two atempo filters
-          const factor1 = 0.5;
+          console.log(`Moderate speed up: atempo=${factor1.toFixed(3)},atempo=${factor2.toFixed(3)}`);
+        }
+        else if (durationRatio < 0.75 && durationRatio >= 0.4) {
+          const factor1 = Math.max(0.6, Math.sqrt(durationRatio));
           const factor2 = durationRatio / factor1;
           filters.push(`atempo=${factor1.toFixed(3)},atempo=${factor2.toFixed(3)}`);
-          console.log(`Applying chained slow down: atempo=${factor1.toFixed(3)},atempo=${factor2.toFixed(3)}`);
-        } else {
-          // Extreme duration mismatch - use truncation/padding instead of speed adjustment
-          console.warn(`Extreme duration mismatch (ratio=${durationRatio.toFixed(2)}), using truncation/padding instead of speed adjustment`);
+          console.log(`Moderate slow down: atempo=${factor1.toFixed(3)},atempo=${factor2.toFixed(3)}`);
+        }
+        // Strategy 4: For extreme cases, use graceful truncation or padding
+        else {
+          console.warn(`Large duration mismatch (ratio=${durationRatio.toFixed(2)})`);
           
-          if (actualDuration > targetDuration) {
-            // TTS is too long - truncate to target duration
-            filters.push(`atrim=duration=${targetDuration.toFixed(3)}`);
-            console.log(`Truncating audio to ${targetDuration.toFixed(3)}s`);
+          if (actualDuration > targetDuration * 1.2) {
+            // Only truncate if TTS is significantly longer (>20% longer)
+            const fadeOutStart = targetDuration - 0.3; // 300ms fade out
+            const fadeOutDuration = 0.3;
+            filters.push(`atrim=end=${targetDuration.toFixed(3)},afade=t=out:st=${Math.max(0, fadeOutStart).toFixed(3)}:d=${fadeOutDuration}`);
+            console.log(`Graceful truncation with ${fadeOutDuration}s fade out`);
+          } else if (actualDuration < targetDuration * 0.8) {
+            // Only pad if TTS is significantly shorter (<80% of target)
+            const paddingDuration = Math.min(targetDuration - actualDuration, 1.5); // Max 1.5s padding
+            filters.push(`apad=pad_dur=${paddingDuration.toFixed(3)}`);
+            console.log(`Adding ${paddingDuration.toFixed(3)}s padding`);
           } else {
-            // TTS is too short - pad with silence to reach target duration
-            const silenceDuration = targetDuration - actualDuration;
-            filters.push(`apad=pad_dur=${silenceDuration.toFixed(3)}`);
-            console.log(`Padding audio with ${silenceDuration.toFixed(3)}s of silence`);
+            // Close enough - let it be natural
+            console.log(`Duration close enough, preserving natural speech timing`);
           }
         }
+      } else {
+        console.log(`Duration within tolerance for segment ${index}: ${actualDuration.toFixed(3)}s vs ${targetDuration.toFixed(3)}s`);
       }
 
       // Add volume boost and format conversion
