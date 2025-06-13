@@ -27,12 +27,12 @@ app.get("/events/:jobId", (req, res) => {
   const jobId = req.params.jobId;
   const clientIp = req.ip || req.socket.remoteAddress;
 
-  console.log(`[SSE] New connection request received:`, {
-    jobId,
-    clientIp,
-    timestamp: new Date().toISOString(),
-    headers: req.headers,
-  });
+  // console.log(`[SSE] New connection request received:`, {
+  //   jobId,
+  //   clientIp,
+  //   timestamp: new Date().toISOString(),
+  //   headers: req.headers,
+  // });
 
   // Set headers for SSE
   res.writeHead(200, {
@@ -74,18 +74,18 @@ app.get("/events/:jobId", (req, res) => {
 });
 
 async function sendJobUpdate(jobId: string) {
-  console.log(`[SSE] Attempting to send update for job ${jobId}`);
+  // console.log(`[SSE] Attempting to send update for job ${jobId}`);
 
   try {
     const job = await audioProcessingQueue.getJob(jobId);
 
     if (!job) {
-      console.log(`[SSE] No job found for id ${jobId}`);
+      // console.log(`[SSE] No job found for id ${jobId}`);
       return;
     }
 
     const state = await job.getState();
-    console.log(`[SSE] Job ${jobId} state: ${state}`);
+    // console.log(`[SSE] Job ${jobId} state: ${state}`);
     const progress = job.progress || 0;
     const remainingTime =
       job.opts.delay && job.timestamp
@@ -157,21 +157,21 @@ async function sendJobUpdate(jobId: string) {
 
       // Only close connection if job is in a terminal state (completed or failed)
       if (state === "completed" || state === "failed") {
-        console.log(
-          `[SSE] Job ${jobId} ${state}. Keeping connection open for 5 seconds to ensure client receives final state.`
-        );
+        // console.log(
+        //   `[SSE] Job ${jobId} ${state}. Keeping connection open for 5 seconds to ensure client receives final state.`
+        // );
         setTimeout(() => {
           if (connections.has(jobId)) {
-            console.log(
-              `[SSE] Closing connection for ${state} job ${jobId}`
-            );
+            // console.log(
+            //   `[SSE] Closing connection for ${state} job ${jobId}`
+            // );
             connections.delete(jobId);
             res.end();
           }
         }, 5000); // Increased to 5 seconds to ensure client receives final state
       }
     } else {
-      console.log(`[SSE] No open connection found for job ${jobId}`);
+      // console.log(`[SSE] No open connection found for job ${jobId}`);
     }
   } catch (error) {
     console.error(`[SSE] Error sending job update for ${jobId}:`, error);
@@ -180,9 +180,9 @@ async function sendJobUpdate(jobId: string) {
 
 // Add logging for event listeners
 eventAudioProcessing.on("completed", (jobId) => {
-  console.log(
-    `[SSE Event] Job completed event received for job ID: ${jobId.jobId}`
-  );
+  // console.log(
+  //   `[SSE Event] Job completed event received for job ID: ${jobId.jobId}`
+  // );
   sendJobUpdate(jobId.jobId);
 });
 
