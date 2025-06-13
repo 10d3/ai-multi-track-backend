@@ -442,26 +442,44 @@ export class AudioCombiner {
 
       // Calculate speed adjustment factor
       const speedFactor = actualDuration / targetDuration;
+      const durationRatio = targetDuration / actualDuration;
       
       let filters = [];
       
-      // Apply speed adjustment if needed (only if difference is significant)
+      // Apply duration adjustment if needed (only if difference is significant)
       if (Math.abs(actualDuration - targetDuration) > 0.05) { // 50ms tolerance
-        console.log(`Adjusting speed by factor ${speedFactor.toFixed(3)} for segment ${index}`);
+        console.log(`Duration mismatch for segment ${index}: actual=${actualDuration.toFixed(3)}s, target=${targetDuration.toFixed(3)}s, ratio=${durationRatio.toFixed(3)}`);
         
-        // Use atempo for reasonable speed changes (0.5x to 2.0x)
-        if (speedFactor >= 0.5 && speedFactor <= 2.0) {
-          filters.push(`atempo=${speedFactor.toFixed(3)}`);
+        // Check if the duration difference is reasonable for speed adjustment
+        if (durationRatio >= 0.5 && durationRatio <= 2.0) {
+          // Reasonable speed change - use atempo
+          filters.push(`atempo=${durationRatio.toFixed(3)}`);
+          console.log(`Applying speed adjustment: atempo=${durationRatio.toFixed(3)}`);
+        } else if (durationRatio > 2.0 && durationRatio <= 4.0) {
+          // Moderate speed change - chain two atempo filters
+          const factor1 = 2.0;
+          const factor2 = durationRatio / factor1;
+          filters.push(`atempo=${factor1.toFixed(3)},atempo=${factor2.toFixed(3)}`);
+          console.log(`Applying chained speed adjustment: atempo=${factor1.toFixed(3)},atempo=${factor2.toFixed(3)}`);
+        } else if (durationRatio < 0.5 && durationRatio >= 0.25) {
+          // Moderate slow down - chain two atempo filters
+          const factor1 = 0.5;
+          const factor2 = durationRatio / factor1;
+          filters.push(`atempo=${factor1.toFixed(3)},atempo=${factor2.toFixed(3)}`);
+          console.log(`Applying chained slow down: atempo=${factor1.toFixed(3)},atempo=${factor2.toFixed(3)}`);
         } else {
-          // For extreme speed changes, use multiple atempo filters
-          console.warn(`Extreme speed change needed (${speedFactor.toFixed(2)}x), using alternative method`);
+          // Extreme duration mismatch - use truncation/padding instead of speed adjustment
+          console.warn(`Extreme duration mismatch (ratio=${durationRatio.toFixed(2)}), using truncation/padding instead of speed adjustment`);
           
-          if (speedFactor < 0.5) {
-            // Very slow - chain multiple atempo filters
-            filters.push(`atempo=0.5,atempo=${(speedFactor/0.5).toFixed(3)}`);
+          if (actualDuration > targetDuration) {
+            // TTS is too long - truncate to target duration
+            filters.push(`atrim=duration=${targetDuration.toFixed(3)}`);
+            console.log(`Truncating audio to ${targetDuration.toFixed(3)}s`);
           } else {
-            // Very fast - chain multiple atempo filters  
-            filters.push(`atempo=2.0,atempo=${(speedFactor/2.0).toFixed(3)}`);
+            // TTS is too short - pad with silence to reach target duration
+            const silenceDuration = targetDuration - actualDuration;
+            filters.push(`apad=pad_dur=${silenceDuration.toFixed(3)}`);
+            console.log(`Padding audio with ${silenceDuration.toFixed(3)}s of silence`);
           }
         }
       }
