@@ -522,7 +522,7 @@ export class AudioCombiner {
       // );
 
       await execAsync(
-        `ffmpeg -i "${speechPath}" -af "loudnorm=I=-16:TP=-1.5:LRA=7,compand=attacks=0.05:decays=0.4:points=-80/-80|-24/-12|-12/-6|0/-3,limiter=level_in=1:level_out=0.9:limit=0.95" "${processedPath}"`
+        `ffmpeg -i "${speechPath}" -af "loudnorm=I=-16:TP=-1.5:LRA=7,compand=attacks=0.05:decays=0.4:points=-80/-80|-24/-12|-12/-6|0/-3" "${processedPath}"`
       )
 
       // // Verify the output file
