@@ -300,7 +300,7 @@ export class AudioProcessor {
     );
 
     try {
-      const scriptPath = path.resolve("./src/script/separate_audio_demucs.py");
+      const scriptPath = path.resolve("./src/script/separate_audio.py");
       await execAsync(
         `python3 "${scriptPath}" "${originalPath}" "${spleeterOutputDir}"`
       );
