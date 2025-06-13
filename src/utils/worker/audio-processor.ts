@@ -405,7 +405,7 @@ export class AudioProcessor {
       
       // Poll for job completion
       let attempts = 0;
-      const maxAttempts = 30; // Maximum number of polling attempts
+      const maxAttempts = 500; // Maximum number of polling attempts
       const pollingInterval = 5000; // 5 seconds between polls
       const statusUrl = `${this.cleanVoiceApiUrl}/${jobId}`;
       
