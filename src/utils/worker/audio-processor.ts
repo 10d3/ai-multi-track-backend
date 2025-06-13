@@ -6,6 +6,7 @@ import { FileProcessor } from "./processor/file-processor";
 import { StorageProcessor } from "./processor/storage-processor";
 import { ZyphraTTS } from "./processor/zyphra-tts-processor";
 import { SpeakerReferenceProcessor } from "./processor/speaker-reference-processor";
+import axios from "axios";
 import path from "path";
 import { exec } from "child_process";
 import fs from "fs/promises";
@@ -19,6 +20,8 @@ export class AudioProcessor {
   private audioCombiner: AudioCombiner;
   private storageProcessor: StorageProcessor;
   private speakerReferenceProcessor: SpeakerReferenceProcessor;
+  private cleanVoiceApiKey: string;
+  private cleanVoiceApiUrl: string = "https://api.cleanvoice.ai/v2/edits";
 
   constructor() {
     this.fileProcessor = new FileProcessor();
@@ -32,6 +35,11 @@ export class AudioProcessor {
     this.speakerReferenceProcessor = new SpeakerReferenceProcessor(
       this.fileProcessor
     );
+    this.cleanVoiceApiKey = process.env.CLEAN_VOICE_API_KEY || "";
+    
+    if (!this.cleanVoiceApiKey) {
+      console.warn("CleanVoice API key not found. Audio enhancement will be skipped.");
+    }
   }
 
   async init(): Promise<void> {
@@ -347,7 +355,128 @@ export class AudioProcessor {
     );
   }
 
-  async uploadToStorage(filePath: string): Promise<string> {
-    return this.storageProcessor.uploadToStorage(filePath);
+  /**
+   * Enhance audio quality using CleanVoice API before uploading
+   */
+  async enhanceAudioWithCleanVoice(audioPath: string): Promise<string> {
+    if (!this.cleanVoiceApiKey) {
+      console.log("CleanVoice API key not provided. Skipping audio enhancement.");
+      return audioPath;
+    }
+
+    try {
+      console.log("Starting CleanVoice audio enhancement process...");
+      
+      // First, upload the file to get a publicly accessible URL
+      // Create a temporary upload for processing
+      const fileUrl = await this.storageProcessor.uploadToStorage(audioPath);
+      console.log(`Uploaded audio to temporary URL: ${fileUrl}`);
+      
+      // Request data for CleanVoice API
+      const data = {
+        "input": {
+          "files": [fileUrl],
+          "config": {
+            "studio_sound": true,
+            "autoeq": true,
+            "normalize": true,
+            "remove_noise": true,
+            "breath": "natural",
+            "keep_music": true
+          }
+        }
+      };
+
+      const headers = {
+        "Content-Type": "application/json",
+        "X-API-Key": this.cleanVoiceApiKey
+      };
+
+      // Submit the job to CleanVoice
+      console.log("Submitting job to CleanVoice API...");
+      const response = await axios.post(this.cleanVoiceApiUrl, data, { headers });
+      
+      if (!response.data || !response.data.id) {
+        throw new Error("Invalid response from CleanVoice API");
+      }
+      
+      const jobId = response.data.id;
+      console.log(`CleanVoice job created with ID: ${jobId}`);
+      
+      // Poll for job completion
+      let attempts = 0;
+      const maxAttempts = 30; // Maximum number of polling attempts
+      const pollingInterval = 5000; // 5 seconds between polls
+      const statusUrl = `${this.cleanVoiceApiUrl}/${jobId}`;
+      
+      let processedFileUrl = null;
+      
+      while (attempts < maxAttempts) {
+        try {
+          console.log(`Checking job status (attempt ${attempts + 1}/${maxAttempts})...`);
+          const statusResponse = await axios.get(statusUrl, { headers });
+          
+          if (statusResponse.data.status === "completed") {
+            console.log("CleanVoice processing completed successfully");
+            // Get the URL of the first processed file
+            if (statusResponse.data.output && statusResponse.data.output.files && statusResponse.data.output.files.length > 0) {
+              processedFileUrl = statusResponse.data.output.files[0];
+              break;
+            }
+            throw new Error("No processed files found in completed job");
+          } else if (statusResponse.data.status === "failed") {
+            throw new Error(`CleanVoice processing failed: ${statusResponse.data.error || "Unknown error"}`);
+          }
+          
+          // Job still processing, wait and try again
+          console.log(`Job status: ${statusResponse.data.status}. Waiting ${pollingInterval/1000} seconds...`);
+          
+          // Sleep for the polling interval
+          await new Promise(resolve => setTimeout(resolve, pollingInterval));
+          attempts++;
+          
+        } catch (error) {
+          console.error("Error checking job status:", error);
+          attempts++;
+          await new Promise(resolve => setTimeout(resolve, pollingInterval));
+        }
+      }
+      
+      if (!processedFileUrl) {
+        throw new Error("Failed to get processed file URL after maximum attempts");
+      }
+      
+      // Download the processed file
+      console.log(`Downloading enhanced audio from ${processedFileUrl}`);
+      const downloadedPath = await this.fileProcessor.downloadAndConvertAudio(
+        processedFileUrl
+      );
+      
+      console.log(`Successfully enhanced audio with CleanVoice: ${downloadedPath}`);
+      return downloadedPath;
+      
+    } catch (error) {
+      console.error("Error processing audio with CleanVoice:", error);
+      console.log("Falling back to original audio file");
+      return audioPath; // Return original file if processing fails
+    }
+  }
+
+  /**
+   * Upload audio to storage, with optional CleanVoice enhancement
+   */
+  async uploadToStorage(filePath: string, applyCleanVoice: boolean = true): Promise<string> {
+    if (applyCleanVoice) {
+      // Process the audio through CleanVoice before uploading to final storage
+      console.log("Enhancing audio quality with CleanVoice before upload...");
+      const enhancedFilePath = await this.enhanceAudioWithCleanVoice(filePath);
+      
+      // Upload the enhanced file to storage
+      console.log("Uploading enhanced audio to storage...");
+      return this.storageProcessor.uploadToStorage(enhancedFilePath);
+    } else {
+      // Upload the original file without enhancement
+      return this.storageProcessor.uploadToStorage(filePath);
+    }
   }
 }

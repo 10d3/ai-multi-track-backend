@@ -42,18 +42,21 @@ export class AudioCombiner {
         throw new Error("Missing required audio files for combination");
       }
 
-      // Get basic audio information
-      console.log("Getting background audio information...");
+      // First analyze the background audio to get its characteristics
+      console.log("Analyzing background audio characteristics...");
       const bgAnalysis = await this.audioAnalyzer.analyzeAudio(backgroundPath);
 
-      console.log("Background audio information:", {
+      console.log("Background audio analysis:", {
         duration: bgAnalysis.duration,
         sampleRate: bgAnalysis.format.sampleRate,
         channels: bgAnalysis.format.channels,
+        loudness: bgAnalysis.loudness.integrated,
+        truePeak: bgAnalysis.loudness.truePeak,
       });
 
-      // Empty voice segments array - no background analysis
-      const voiceSegments: VoiceActivitySegment[] = [];
+      // Detect voice activity in background audio
+      console.log("Detecting voice activity in background audio...");
+      const voiceSegments = await this.detectVoiceActivity(backgroundPath);
 
       // Create speech-free background audio
       console.log("Creating speech-free background audio...");
@@ -347,8 +350,76 @@ export class AudioCombiner {
     voiceSegments: VoiceActivitySegment[],
     bgAnalysis: any
   ): Promise<string> {
-    // Simply return the original background path without processing
-    return backgroundPath;
+    try {
+      // if (voiceSegments.length === 0) {
+      //   console.log("No voice segments detected, using original background");
+      //   return backgroundPath;
+      // }
+
+      // console.log(
+      //   `Removing ${voiceSegments.length} voice segments from background...`
+      // );
+
+      // const cleanBackgroundPath = await this.fileProcessor.createTempPath(
+      //   "clean_background",
+      //   "wav"
+      // );
+
+      // // Create filter complex to remove voice segments
+      // let filterComplex = "";
+
+      // // Generate ambient noise to replace speech segments
+      // // Use anoisesrc to create subtle background noise
+      // filterComplex += `anoisesrc=duration=${bgAnalysis.duration}:color=brown:seed=42:sample_rate=${bgAnalysis.format.sampleRate}[noise];`;
+      // filterComplex += `[noise]volume=0.05[quietnoise];`; // Very quiet ambient noise
+
+      // // Start with the original background
+      // filterComplex += `[0:a]`;
+
+      // // For each voice segment, replace with quiet noise
+      // for (let i = 0; i < voiceSegments.length; i++) {
+      //   const segment = voiceSegments[i];
+      //   const start = segment.start;
+      //   const end = segment.end;
+
+      //   // Create a segment of quiet noise for this time range
+      //   filterComplex += `[quietnoise]atrim=start=${start}:end=${end},asetpts=PTS-STARTPTS[replace${i}];`;
+
+      //   // Mix the replacement into the background at the correct time
+      //   filterComplex += `areplace=start=${start}:end=${end}[temp${i}];`;
+
+      //   // Chain the replacements
+      //   if (i < voiceSegments.length - 1) {
+      //     filterComplex += `[temp${i}]`;
+      //   }
+      // }
+
+      // // Simplified approach: use volume ducking during voice segments
+      // let duckingFilter = "[0:a]";
+
+      // for (const segment of voiceSegments) {
+      //   // Significantly reduce volume during detected speech segments
+      //   duckingFilter += `volume=enable='between(t,${segment.start},${segment.end})':volume=0.1,`;
+      // }
+
+      // // Remove trailing comma and add output label
+      // duckingFilter = duckingFilter.replace(/,$/, "") + "[out]";
+
+      // // Execute ffmpeg to create clean background
+      // await execAsync(
+      //   `ffmpeg -threads 2 -i "${backgroundPath}" -filter_complex "${duckingFilter}" -map "[out]" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${cleanBackgroundPath}"`
+      // );
+
+      // // Verify the output file
+      // await this.fileProcessor.verifyFile(cleanBackgroundPath);
+
+      // console.log("Successfully created speech-free background audio");
+      return backgroundPath;
+    } catch (error) {
+      console.error("Error removing speech from background:", error);
+      console.log("Falling back to original background audio");
+      return backgroundPath; // Fallback to original if processing fails
+    }
   }
 
   /**
@@ -437,13 +508,25 @@ export class AudioCombiner {
         `processed_speech_${index}.wav`
       );
 
-      // Only keep the volume boost filter
+      // // Apply format conversion and volume boost
+      // const channelLayout =
+      //   bgAnalysis.format.channels === 1 ? "mono" : "stereo";
+
+      // // Apply significant volume boost to make speech clearly audible
+      // // Using volume=3.0 for triple the volume
+      // const boostFilter = `aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout},volume=3.0`;
+
+      // // Process the speech file with volume boost
+      // await execAsync(
+      //   `ffmpeg -threads 2 -i "${speechPath}" -af "${boostFilter}" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${processedPath}"`
+      // );
+
       await execAsync(
         `ffmpeg -i "${speechPath}" -af "volume=3.0" "${processedPath}"`
-      );
+      )
 
-      // Verify the output file
-      await this.fileProcessor.verifyFile(processedPath);
+      // // Verify the output file
+      // await this.fileProcessor.verifyFile(processedPath);
 
       return processedPath;
     } catch (error) {
@@ -457,7 +540,9 @@ export class AudioCombiner {
     originalAnalysis: any
   ): Promise<string> {
     try {
-      console.log("Applying final volume processing...");
+      console.log(
+        "Applying final processing with speech clarity enhancement..."
+      );
 
       // Create an output path
       const outputPath = await this.fileProcessor.createTempPath(
@@ -465,9 +550,21 @@ export class AudioCombiner {
         "wav"
       );
 
-      // Only keeping volume-related processing
+      // Extract basic format parameters
+      const channelLayout =
+        originalAnalysis.format.channels === 1 ? "mono" : "stereo";
+
+      // Final processing to ensure speech clarity and consistent volume
+      const finalFilter =
+        `aformat=sample_fmts=fltp:sample_rates=${originalAnalysis.format.sampleRate}:channel_layouts=${channelLayout},` +
+        `highpass=f=80,` + // Remove low-frequency rumble
+        `lowpass=f=8000,` + // Remove high-frequency noise
+        `compand=attacks=0.01:decays=0.2:points=-80/-80|-50/-25|-30/-15|-5/-5|0/-2:soft-knee=2:gain=3,` +
+        `loudnorm=I=-18:TP=-2:LRA=7`; // Final loudness normalization
+
+      // Process the final audio with enhanced clarity
       await execAsync(
-        `ffmpeg -threads 2 -i "${inputPath}" -af "volume=1.5" -c:a pcm_s24le -ar ${originalAnalysis.format.sampleRate} -ac ${originalAnalysis.format.channels} "${outputPath}"`
+        `ffmpeg -threads 2 -i "${inputPath}" -af "${finalFilter}" -c:a pcm_s24le -ar ${originalAnalysis.format.sampleRate} -ac ${originalAnalysis.format.channels} "${outputPath}"`
       );
 
       // Verify the output file
