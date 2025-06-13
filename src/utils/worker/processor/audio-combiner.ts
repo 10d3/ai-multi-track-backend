@@ -60,10 +60,10 @@ export class AudioCombiner {
 
       // Create speech-free background audio
       console.log("Creating speech-free background audio...");
-      const cleanBackgroundPath = await this.separateOriginalAudio(
+      const cleanBackgroundPath = await this.removeSpeechFromBackground(
         backgroundPath,
-        // voiceSegments,
-        // bgAnalysis
+        voiceSegments,
+        bgAnalysis
       );
 
       // Create a temporary directory for the combined audio segments
@@ -299,9 +299,9 @@ export class AudioCombiner {
     originalAudioUrl: string,
     // transcript: Transcript[]
   ): Promise<string> {
-    // const originalPath = await this.fileProcessor.downloadAndConvertAudio(
-    //   originalAudioUrl
-    // );
+    const originalPath = await this.fileProcessor.downloadAndConvertAudio(
+      originalAudioUrl
+    );
     const spleeterOutputDir = await this.fileProcessor.createTempDir(
       "spleeter_output"
     );
@@ -309,7 +309,7 @@ export class AudioCombiner {
     try {
       const scriptPath = path.resolve("./src/script/separate_audio_demucs.py");
       await execAsync(
-        `python3 "${scriptPath}" "${originalAudioUrl}" "${spleeterOutputDir}"`
+        `python3 "${scriptPath}" "${originalPath}" "${spleeterOutputDir}"`
       );
 
       const subdirs = await fs.readdir(spleeterOutputDir);
@@ -351,70 +351,70 @@ export class AudioCombiner {
     bgAnalysis: any
   ): Promise<string> {
     try {
-      if (voiceSegments.length === 0) {
-        console.log("No voice segments detected, using original background");
-        return backgroundPath;
-      }
+      // if (voiceSegments.length === 0) {
+      //   console.log("No voice segments detected, using original background");
+      //   return backgroundPath;
+      // }
 
-      console.log(
-        `Removing ${voiceSegments.length} voice segments from background...`
-      );
+      // console.log(
+      //   `Removing ${voiceSegments.length} voice segments from background...`
+      // );
 
-      const cleanBackgroundPath = await this.fileProcessor.createTempPath(
-        "clean_background",
-        "wav"
-      );
+      // const cleanBackgroundPath = await this.fileProcessor.createTempPath(
+      //   "clean_background",
+      //   "wav"
+      // );
 
-      // Create filter complex to remove voice segments
-      let filterComplex = "";
+      // // Create filter complex to remove voice segments
+      // let filterComplex = "";
 
-      // Generate ambient noise to replace speech segments
-      // Use anoisesrc to create subtle background noise
-      filterComplex += `anoisesrc=duration=${bgAnalysis.duration}:color=brown:seed=42:sample_rate=${bgAnalysis.format.sampleRate}[noise];`;
-      filterComplex += `[noise]volume=0.05[quietnoise];`; // Very quiet ambient noise
+      // // Generate ambient noise to replace speech segments
+      // // Use anoisesrc to create subtle background noise
+      // filterComplex += `anoisesrc=duration=${bgAnalysis.duration}:color=brown:seed=42:sample_rate=${bgAnalysis.format.sampleRate}[noise];`;
+      // filterComplex += `[noise]volume=0.05[quietnoise];`; // Very quiet ambient noise
 
-      // Start with the original background
-      filterComplex += `[0:a]`;
+      // // Start with the original background
+      // filterComplex += `[0:a]`;
 
-      // For each voice segment, replace with quiet noise
-      for (let i = 0; i < voiceSegments.length; i++) {
-        const segment = voiceSegments[i];
-        const start = segment.start;
-        const end = segment.end;
+      // // For each voice segment, replace with quiet noise
+      // for (let i = 0; i < voiceSegments.length; i++) {
+      //   const segment = voiceSegments[i];
+      //   const start = segment.start;
+      //   const end = segment.end;
 
-        // Create a segment of quiet noise for this time range
-        filterComplex += `[quietnoise]atrim=start=${start}:end=${end},asetpts=PTS-STARTPTS[replace${i}];`;
+      //   // Create a segment of quiet noise for this time range
+      //   filterComplex += `[quietnoise]atrim=start=${start}:end=${end},asetpts=PTS-STARTPTS[replace${i}];`;
 
-        // Mix the replacement into the background at the correct time
-        filterComplex += `areplace=start=${start}:end=${end}[temp${i}];`;
+      //   // Mix the replacement into the background at the correct time
+      //   filterComplex += `areplace=start=${start}:end=${end}[temp${i}];`;
 
-        // Chain the replacements
-        if (i < voiceSegments.length - 1) {
-          filterComplex += `[temp${i}]`;
-        }
-      }
+      //   // Chain the replacements
+      //   if (i < voiceSegments.length - 1) {
+      //     filterComplex += `[temp${i}]`;
+      //   }
+      // }
 
-      // Simplified approach: use volume ducking during voice segments
-      let duckingFilter = "[0:a]";
+      // // Simplified approach: use volume ducking during voice segments
+      // let duckingFilter = "[0:a]";
 
-      for (const segment of voiceSegments) {
-        // Significantly reduce volume during detected speech segments
-        duckingFilter += `volume=enable='between(t,${segment.start},${segment.end})':volume=0.1,`;
-      }
+      // for (const segment of voiceSegments) {
+      //   // Significantly reduce volume during detected speech segments
+      //   duckingFilter += `volume=enable='between(t,${segment.start},${segment.end})':volume=0.1,`;
+      // }
 
-      // Remove trailing comma and add output label
-      duckingFilter = duckingFilter.replace(/,$/, "") + "[out]";
+      // // Remove trailing comma and add output label
+      // duckingFilter = duckingFilter.replace(/,$/, "") + "[out]";
 
-      // Execute ffmpeg to create clean background
-      await execAsync(
-        `ffmpeg -threads 2 -i "${backgroundPath}" -filter_complex "${duckingFilter}" -map "[out]" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${cleanBackgroundPath}"`
-      );
+      // // Execute ffmpeg to create clean background
+      // await execAsync(
+      //   `ffmpeg -threads 2 -i "${backgroundPath}" -filter_complex "${duckingFilter}" -map "[out]" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${cleanBackgroundPath}"`
+      // );
 
-      // Verify the output file
-      await this.fileProcessor.verifyFile(cleanBackgroundPath);
+      // // Verify the output file
+      // await this.fileProcessor.verifyFile(cleanBackgroundPath);
 
-      console.log("Successfully created speech-free background audio");
-      return cleanBackgroundPath;
+      // console.log("Successfully created speech-free background audio");
+      return backgroundPath;
     } catch (error) {
       console.error("Error removing speech from background:", error);
       console.log("Falling back to original background audio");
