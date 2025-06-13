@@ -194,10 +194,6 @@ export class AudioCombiner {
         "wav"
       );
 
-      // Log the filter complex for debugging
-      console.log("Filter complex:", filterComplex.replace(/\s+/g, " "));
-      console.log("Input arguments:", inputArgs);
-      
       // Execute ffmpeg with single filter complex that preserves exact duration
       await execAsync(
         `ffmpeg ${inputArgs} -filter_complex "${filterComplex.replace(
@@ -207,17 +203,6 @@ export class AudioCombiner {
           bgAnalysis.format.sampleRate
         } -ac ${bgAnalysis.format.channels} "${finalPath}"`
       );
-      
-      // Check if speech is audible by analyzing the output
-      console.log("Analyzing final audio levels...");
-      try {
-        const { stderr } = await execAsync(
-          `ffmpeg -i "${finalPath}" -af "volumedetect" -f null - 2>&1`
-        );
-        console.log("Final audio volume analysis:", stderr.match(/mean_volume: [-\d.]+/)?.[0] || "No volume data");
-      } catch (error) {
-        console.log("Could not analyze final audio levels");
-      }
 
       // Verify the output file
       await this.fileProcessor.verifyFile(finalPath);
