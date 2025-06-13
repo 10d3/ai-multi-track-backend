@@ -540,27 +540,37 @@ export class AudioCombiner {
     originalAnalysis: any
   ): Promise<string> {
     try {
-      console.log("Applying final processing without audio filters...");
-      
+      console.log(
+        "Applying final processing with speech clarity enhancement..."
+      );
+
       // Create an output path
       const outputPath = await this.fileProcessor.createTempPath(
         "final_processed",
         "wav"
       );
-  
+
       // Extract basic format parameters
       const channelLayout =
         originalAnalysis.format.channels === 1 ? "mono" : "stereo";
-  
-      // Process the audio without any filters - just format conversion
+
+      // Final processing to ensure speech clarity and consistent volume
+      const finalFilter =
+        `aformat=sample_fmts=fltp:sample_rates=${originalAnalysis.format.sampleRate}:channel_layouts=${channelLayout},` +
+        `highpass=f=80,` + // Remove low-frequency rumble
+        `lowpass=f=8000,` + // Remove high-frequency noise
+        `compand=attacks=0.01:decays=0.2:points=-80/-80|-50/-25|-30/-15|-5/-5|0/-2:soft-knee=2:gain=3,` +
+        `loudnorm=I=-18:TP=-2:LRA=7`; // Final loudness normalization
+
+      // Process the final audio with enhanced clarity
       await execAsync(
-        `ffmpeg -threads 2 -i "${inputPath}" -c:a pcm_s24le -ar ${originalAnalysis.format.sampleRate} -ac ${originalAnalysis.format.channels} "${outputPath}"`
+        `ffmpeg -threads 2 -i "${inputPath}" -af "${finalFilter}" -c:a pcm_s24le -ar ${originalAnalysis.format.sampleRate} -ac ${originalAnalysis.format.channels} "${outputPath}"`
       );
-  
+
       // Verify the output file
       await this.fileProcessor.verifyFile(outputPath);
-  
-      // Verify final length matches original
+
+      // Verify final length matches original background
       const finalAnalysis = await this.audioAnalyzer.analyzeAudio(outputPath);
       console.log("Final audio validation:", {
         originalDuration: originalAnalysis.duration.toFixed(3) + "s",
@@ -570,7 +580,7 @@ export class AudioCombiner {
             3
           ) + "s",
       });
-  
+
       return outputPath;
     } catch (error) {
       console.error("Error applying final processing:", error);
