@@ -36,9 +36,11 @@ export class AudioProcessor {
       this.fileProcessor
     );
     this.cleanVoiceApiKey = process.env.CLEAN_VOICE_API_KEY || "";
-    
+
     if (!this.cleanVoiceApiKey) {
-      console.warn("CleanVoice API key not found. Audio enhancement will be skipped.");
+      console.warn(
+        "CleanVoice API key not found. Audio enhancement will be skipped."
+      );
     }
   }
 
@@ -85,7 +87,7 @@ export class AudioProcessor {
     // Store results by speaker to maintain original order
     const speakerResults: { [speaker: string]: string[] } = {};
     const speakerResultsIndex: { [speaker: string]: number } = {};
-    
+
     // Process each speaker's requests
     for (const speaker in requestsBySpeaker) {
       const speakerRequests = requestsBySpeaker[speaker];
@@ -282,17 +284,26 @@ export class AudioProcessor {
     const allResults: string[] = [];
     for (const item of mergedData) {
       const speaker = item.speaker || "default";
-      if (speakerResults[speaker] && speakerResultsIndex[speaker] < speakerResults[speaker].length) {
+      if (
+        speakerResults[speaker] &&
+        speakerResultsIndex[speaker] < speakerResults[speaker].length
+      ) {
         // Get the next result for this speaker
         const result = speakerResults[speaker][speakerResultsIndex[speaker]];
         allResults.push(result);
         speakerResultsIndex[speaker]++;
       } else {
-        console.warn(`[AudioProcessor] Missing result for speaker ${speaker} at index ${speakerResultsIndex[speaker] || 0}`);
+        console.warn(
+          `[AudioProcessor] Missing result for speaker ${speaker} at index ${
+            speakerResultsIndex[speaker] || 0
+          }`
+        );
       }
     }
 
-    console.log(`[AudioProcessor] Reconstructed ${allResults.length} results in original transcript order`);
+    console.log(
+      `[AudioProcessor] Reconstructed ${allResults.length} results in original transcript order`
+    );
     return allResults;
   }
 
@@ -360,157 +371,207 @@ export class AudioProcessor {
    */
   async enhanceAudioWithCleanVoice(audioPath: string): Promise<string> {
     if (!this.cleanVoiceApiKey) {
-      console.log("CleanVoice API key not provided. Skipping audio enhancement.");
+      console.log(
+        "CleanVoice API key not provided. Skipping audio enhancement."
+      );
       return audioPath;
     }
 
     try {
       console.log("Starting CleanVoice audio enhancement process...");
-      
+
       // First, upload the file to get a publicly accessible URL
       // Create a temporary upload for processing
       const fileUrl = await this.storageProcessor.uploadToStorage(audioPath);
       console.log(`Uploaded audio to temporary URL: ${fileUrl}`);
-      
+
       // Request data for CleanVoice API
       const data = {
-        "input": {
-          "files": [fileUrl],
-          "config": {
-            "studio_sound": true,
-            "autoeq": true,
-            "normalize": true,
-            "remove_noise": true,
-            "breath": "natural",
-            "keep_music": true
-          }
-        }
+        input: {
+          files: [fileUrl],
+          config: {
+            studio_sound: true,
+            autoeq: true,
+            normalize: true,
+            remove_noise: true,
+            breath: "natural",
+            keep_music: true,
+          },
+        },
       };
 
       const headers = {
         "Content-Type": "application/json",
-        "X-API-Key": this.cleanVoiceApiKey
+        "X-API-Key": this.cleanVoiceApiKey,
       };
 
       // Submit the job to CleanVoice
       console.log("Submitting job to CleanVoice API...");
-      const response = await axios.post(this.cleanVoiceApiUrl, data, { headers });
-      
+      const response = await axios.post(this.cleanVoiceApiUrl, data, {
+        headers,
+      });
+
       if (!response.data || !response.data.id) {
         throw new Error("Invalid response from CleanVoice API");
       }
-      
+
       const jobId = response.data.id;
       console.log(`CleanVoice job created with ID: ${jobId}`);
-      
+
       // Poll for job completion
       let attempts = 0;
       const maxAttempts = 500; // Maximum number of polling attempts
       const pollingInterval = 5000; // 5 seconds between polls
       const statusUrl = `${this.cleanVoiceApiUrl}/${jobId}`;
-      
+
       let processedFileUrl = null;
-      
+
       while (attempts < maxAttempts) {
         try {
-          console.log(`Checking job status (attempt ${attempts + 1}/${maxAttempts})...`);
+          console.log(
+            `Checking job status (attempt ${attempts + 1}/${maxAttempts})...`
+          );
           const statusResponse = await axios.get(statusUrl, { headers });
-          
+
           // Log the full response structure for debugging
-          console.log("CleanVoice API response structure:", JSON.stringify(statusResponse.data, null, 2));
-          
+          console.log(
+            "CleanVoice API response structure:",
+            JSON.stringify(statusResponse.data, null, 2)
+          );
+
           // Check for both possible success status values: "completed" and "SUCCESS"
-          if (statusResponse.data.status === "completed" || statusResponse.data.status === "SUCCESS") {
-            console.log(`CleanVoice processing completed successfully with status: ${statusResponse.data.status}`);
-            
+          if (
+            statusResponse.data.status === "completed" ||
+            statusResponse.data.status === "SUCCESS"
+          ) {
+            console.log(
+              `CleanVoice processing completed successfully with status: ${statusResponse.data.status}`
+            );
+
             // Based on the actual API response format, check for result.download_url
-            if (statusResponse.data.result && statusResponse.data.result.download_url) {
+            if (
+              statusResponse.data.result &&
+              statusResponse.data.result.download_url
+            ) {
               processedFileUrl = statusResponse.data.result.download_url;
-              console.log(`Found file URL in result.download_url: ${processedFileUrl}`);
+              console.log(
+                `Found file URL in result.download_url: ${processedFileUrl}`
+              );
               break;
             }
             // Fallback to other possible locations for the URL
-            else if (statusResponse.data.output && statusResponse.data.output.files && statusResponse.data.output.files.length > 0) {
+            else if (
+              statusResponse.data.output &&
+              statusResponse.data.output.files &&
+              statusResponse.data.output.files.length > 0
+            ) {
               processedFileUrl = statusResponse.data.output.files[0];
-              console.log(`Found file URL in output.files[0]: ${processedFileUrl}`);
+              console.log(
+                `Found file URL in output.files[0]: ${processedFileUrl}`
+              );
               break;
-            } 
-            else if (statusResponse.data.files && statusResponse.data.files.length > 0) {
+            } else if (
+              statusResponse.data.files &&
+              statusResponse.data.files.length > 0
+            ) {
               processedFileUrl = statusResponse.data.files[0];
               console.log(`Found file URL in files[0]: ${processedFileUrl}`);
               break;
-            }
-            else if (statusResponse.data.url) {
+            } else if (statusResponse.data.url) {
               processedFileUrl = statusResponse.data.url;
               console.log(`Found file URL in url field: ${processedFileUrl}`);
               break;
-            }
-            else if (statusResponse.data.file) {
+            } else if (statusResponse.data.file) {
               processedFileUrl = statusResponse.data.file;
               console.log(`Found file URL in file field: ${processedFileUrl}`);
               break;
             }
-            
+
             // If we still don't have a URL but the status is success, try once more on the next iteration
             // This handles cases where the file might not be immediately available
             if (attempts < maxAttempts - 1) {
-              console.log("Job completed but output URL not found. Waiting for output to be available...");
-              await new Promise(resolve => setTimeout(resolve, pollingInterval));
+              console.log(
+                "Job completed but output URL not found. Waiting for output to be available..."
+              );
+              await new Promise((resolve) =>
+                setTimeout(resolve, pollingInterval)
+              );
               attempts++;
               continue;
             }
-            
-            throw new Error("No processed files found in completed job despite success status");
-          } else if (statusResponse.data.status === "failed" || statusResponse.data.status === "FAILED") {
-            throw new Error(`CleanVoice processing failed: ${statusResponse.data.error || "Unknown error"}`);
+
+            throw new Error(
+              "No processed files found in completed job despite success status"
+            );
+          } else if (
+            statusResponse.data.status === "failed" ||
+            statusResponse.data.status === "FAILED"
+          ) {
+            throw new Error(
+              `CleanVoice processing failed: ${
+                statusResponse.data.error || "Unknown error"
+              }`
+            );
           }
-          
+
           // Job still processing, wait and try again
-          console.log(`Job status: ${statusResponse.data.status}. Waiting ${pollingInterval/1000} seconds...`);
-          
+          console.log(
+            `Job status: ${statusResponse.data.status}. Waiting ${
+              pollingInterval / 1000
+            } seconds...`
+          );
+
           // Sleep for the polling interval
-          await new Promise(resolve => setTimeout(resolve, pollingInterval));
+          await new Promise((resolve) => setTimeout(resolve, pollingInterval));
           attempts++;
-          
         } catch (error) {
           console.error("Error checking job status:", error);
           attempts++;
-          await new Promise(resolve => setTimeout(resolve, pollingInterval));
+          await new Promise((resolve) => setTimeout(resolve, pollingInterval));
         }
       }
-      
+
       // After maximum attempts, if we still don't have a URL but no error was thrown,
       // log a clear message and fall back to the original file
       if (!processedFileUrl) {
-        console.error("Failed to get processed file URL after maximum polling attempts");
-        console.log("Falling back to original audio file due to CleanVoice API issue");
+        console.error(
+          "Failed to get processed file URL after maximum polling attempts"
+        );
+        console.log(
+          "Falling back to original audio file due to CleanVoice API issue"
+        );
         return audioPath;
       }
-      
+
       // Validate the processed file URL
-      if (!processedFileUrl.startsWith('http')) {
-        console.error(`Invalid processed file URL received: ${processedFileUrl}`);
+      if (!processedFileUrl.startsWith("http")) {
+        console.error(
+          `Invalid processed file URL received: ${processedFileUrl}`
+        );
         return audioPath;
       }
-      
+
       // Download the processed file
       console.log(`Downloading enhanced audio from ${processedFileUrl}`);
       try {
         const downloadedPath = await this.fileProcessor.downloadAndConvertAudio(
           processedFileUrl
         );
-        
+
         // Verify the downloaded file exists and has content
         await this.fileProcessor.verifyFile(downloadedPath);
-        
-        console.log(`Successfully enhanced audio with CleanVoice: ${downloadedPath}`);
+
+        console.log(
+          `Successfully enhanced audio with CleanVoice: ${downloadedPath}`
+        );
         return downloadedPath;
       } catch (downloadError) {
         console.error("Error downloading processed file:", downloadError);
-        console.log("Falling back to original audio file due to download error");
+        console.log(
+          "Falling back to original audio file due to download error"
+        );
         return audioPath;
       }
-      
     } catch (error) {
       console.error("Error processing audio with CleanVoice:", error);
       console.log("Falling back to original audio file");
@@ -521,12 +582,15 @@ export class AudioProcessor {
   /**
    * Upload audio to storage, with optional CleanVoice enhancement
    */
-  async uploadToStorage(filePath: string, applyCleanVoice: boolean = true): Promise<string> {
+  async uploadToStorage(
+    filePath: string,
+    applyCleanVoice: boolean = false
+  ): Promise<string> {
     if (applyCleanVoice) {
       // Process the audio through CleanVoice before uploading to final storage
       console.log("Enhancing audio quality with CleanVoice before upload...");
       const enhancedFilePath = await this.enhanceAudioWithCleanVoice(filePath);
-      
+
       // Upload the enhanced file to storage
       console.log("Uploading enhanced audio to storage...");
       return this.storageProcessor.uploadToStorage(enhancedFilePath);
