@@ -33,6 +33,21 @@ export class AudioCombiner {
     this.audioAnalyzer = audioAnalyzer;
   }
   /**
+   * Gets the duration of an audio file in seconds
+   */
+  private async getAudioDuration(filePath: string): Promise<number> {
+    try {
+      const { stdout } = await execAsync(
+        `ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${filePath}"`
+      );
+      return parseFloat(stdout.trim());
+    } catch (error) {
+      console.error("Error getting audio duration:", error);
+      throw error;
+    }
+  }
+
+  /**
    * Combines multiple speech segments over a background audio track.
    * This revised method uses a single, robust filter_complex command.
    */
@@ -46,6 +61,10 @@ export class AudioCombiner {
       if (!backgroundPath || !speechPaths.length) {
         throw new Error("Missing background or speech audio files.");
       }
+
+      // Get the background audio duration first
+      const backgroundDuration = await this.getAudioDuration(backgroundPath);
+      console.log(`Background audio duration: ${backgroundDuration} seconds`);
 
       const outputDir = await this.fileProcessor.createTempDir(
         "combined_audio"
@@ -98,14 +117,16 @@ export class AudioCombiner {
         // Create a delayed audio stream and label it e.g., [s0], [s1]
         filterComplexParts.push(`[${inputIndex}:a]adelay=${delay}[s${index}]`);
         finalMixInputs += `[s${index}]`;
-      }); // 3. Create the final 'amix' filter to combine everything
+      }); 
+
+      // 3. Create the final 'amix' filter to combine everything
 
       // This single amix combines the background ([0:a]) and all delayed speech streams ([s0], [s1]...)
-      // - duration=longest: The output will last as long as the longest input (typically the background music).
+      // - duration=first: The output will match the duration of the first input (background audio).
       // - dropout_transition=0: Prevents volume changes when streams end.
       const totalInputs = speechSegments.length + 1;
       filterComplexParts.push(
-        `${finalMixInputs}amix=inputs=${totalInputs}:duration=longest:dropout_transition=0[out]`
+        `${finalMixInputs}amix=inputs=${totalInputs}:duration=first:dropout_transition=0[out]`
       );
       const filterComplex = filterComplexParts.join(";");
 
