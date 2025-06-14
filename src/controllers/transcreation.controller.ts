@@ -62,6 +62,8 @@ export const formatTranscreationForWorker = async (
     voice: t.voice || '', // Use voice from transcript if available
   }));
 
+  console.log(transcript[0])
+
   // Get language code for TTS
   const languageCode = transcreation.toLanguage || "en-US";
 
@@ -107,6 +109,8 @@ export const formatTranscreationForWorker = async (
       priority : transcreation.priority
     };
   });
+
+  console.log(ttsRequests[0])
 
   // Create the job data object
   const jobData: JobData = {
