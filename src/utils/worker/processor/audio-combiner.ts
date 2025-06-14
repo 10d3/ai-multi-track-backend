@@ -82,11 +82,16 @@ export class AudioCombiner {
           console.warn(`Skipping segment ${i} due to missing transcript data.`);
           continue;
         }
-        const processedSpeechPath = await this.processSpeechForConsistency(
+
+        // This function now clips the segment from the main file and processes it.
+        const processedSpeechPath = await this.extractAndProcessSpeechSegment(
           speechPaths[i],
           outputDir,
-          i
+          i,
+          segment.start,
+          segment.end
         );
+
         speechSegments.push({
           path: processedSpeechPath,
           start: segment.start,
@@ -190,20 +195,32 @@ export class AudioCombiner {
     }
     return adjustedSegments;
   }
+  /**
+   * Extracts a specific segment from a speech file and processes it.
+   */
 
-  private async processSpeechForConsistency(
+  private async extractAndProcessSpeechSegment(
     speechPath: string,
     outputDir: string,
-    index: number
+    index: number,
+    startMs: number,
+    endMs: number
   ): Promise<string> {
     try {
+      const startSeconds = startMs / 1000.0;
+      // The duration of the clip is needed for the -t flag in the clipping command
+      const durationSeconds = (endMs - startMs) / 1000.0;
+
       const processedPath = path.join(
         outputDir,
         `processed_speech_${index}.wav`
       );
-      await execAsync(
-        `ffmpeg -y -i "${speechPath}" -af "volume=2.0" "${processedPath}"`
-      );
+
+      // Use -ss to seek to the start time and -t for the duration to clip the segment.
+      // This clips the audio *before* applying the volume filter.
+      const clipCommand = `ffmpeg -y -ss ${startSeconds} -i "${speechPath}" -t ${durationSeconds} -af "volume=2.0" "${processedPath}"`;
+
+      await execAsync(clipCommand);
       await this.fileProcessor.verifyFile(processedPath);
       return processedPath;
     } catch (error) {
