@@ -308,9 +308,11 @@ export class AudioCombiner {
 
     for (const segment of segments) {
       try {
-        const targetDuration = segment.end - segment.start;
+        // If your segment.start and segment.end are in milliseconds
+        const targetDurationMs = segment.end - segment.start; // milliseconds
+        const targetDurationSec = targetDurationMs / 1000;   // convert to seconds
         
-        console.log(`Processing segment ${segment.originalIndex} - target duration: ${targetDuration.toFixed(3)}s`);
+        console.log(`Processing segment ${segment.originalIndex} - target duration: ${targetDurationSec.toFixed(3)}s`);
 
         // Create output path for tempo-adjusted audio
         const adjustedPath = await this.fileProcessor.createTempPath(
@@ -322,7 +324,7 @@ export class AudioCombiner {
         const scriptPath = path.resolve("./src/script/adjust_speech_timing.py");
         
         const { stdout, stderr } = await execAsync(
-          `python "${scriptPath}" "${segment.path}" ${targetDuration} "${adjustedPath}"`
+          `python "${scriptPath}" "${segment.path}" ${targetDurationSec} "${adjustedPath}"`
         );
 
         // Log Python script output
