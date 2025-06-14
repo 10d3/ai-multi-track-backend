@@ -299,120 +299,67 @@ export class AudioCombiner {
   }
 
   /**
-   * Adjust speech segments to fit within their allocated time slots using atempo filter
+   * Adjust speech segments to fit within their allocated time slots using Python script
    */
   private async adjustSpeechTiming(
     segments: SpeechSegment[]
   ): Promise<SpeechSegment[]> {
-    // const adjustedSegments: SpeechSegment[] = [];
+    const adjustedSegments: SpeechSegment[] = [];
 
-    // for (const segment of segments) {
-    //   try {
-    //     const targetDuration = segment.end - segment.start;
+    for (const segment of segments) {
+      try {
+        const targetDuration = segment.end - segment.start;
+        
+        console.log(`Processing segment ${segment.originalIndex} - target duration: ${targetDuration.toFixed(3)}s`);
 
-    //     // Get actual duration from ffprobe
-    //     const { stdout } = await execAsync(
-    //       `ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${segment.path}"`
-    //     );
-    //     const actualDuration = parseFloat(stdout.trim());
+        // Create output path for tempo-adjusted audio
+        const adjustedPath = await this.fileProcessor.createTempPath(
+          `tempo_adjusted_${segment.originalIndex}`,
+          "wav"
+        );
 
-    //     if (isNaN(actualDuration) || actualDuration <= 0) {
-    //       console.warn(
-    //         `Invalid duration for segment ${segment.originalIndex}, skipping`
-    //       );
-    //       continue;
-    //     }
+        // Use Python script to adjust tempo
+        const scriptPath = path.resolve("./src/script/adjust_speech_timing.py");
+        
+        const { stdout, stderr } = await execAsync(
+          `python "${scriptPath}" "${segment.path}" ${targetDuration} "${adjustedPath}"`
+        );
 
-    //     // ✅ Corrected tempo calculation
-    //     const requiredTempo = actualDuration / targetDuration;
+        // Log Python script output
+        if (stdout) {
+          console.log(`Segment ${segment.originalIndex} processing:`, stdout);
+        }
+        
+        if (stderr) {
+          console.warn(`Segment ${segment.originalIndex} warnings:`, stderr);
+        }
 
-    //     console.log(
-    //       `Segment ${segment.originalIndex}: actual=${actualDuration.toFixed(
-    //         3
-    //       )}s, target=${targetDuration.toFixed(
-    //         3
-    //       )}s, tempo=${requiredTempo.toFixed(3)}`
-    //     );
+        // Verify the adjusted file exists
+        await this.fileProcessor.verifyFile(adjustedPath);
 
-    //     // Only adjust if tempo difference is >5%
-    //     if (Math.abs(requiredTempo - 1.0) > 0.05) {
-    //       const clampedTempo = Math.max(0.5, Math.min(100.0, requiredTempo));
+        adjustedSegments.push({
+          ...segment,
+          path: adjustedPath,
+          adjustedStart: segment.start,
+          adjustedEnd: segment.end,
+        });
 
-    //       if (clampedTempo !== requiredTempo) {
-    //         console.warn(
-    //           `Tempo ${requiredTempo.toFixed(
-    //             3
-    //           )} clamped to ${clampedTempo.toFixed(3)} for segment ${
-    //             segment.originalIndex
-    //           }`
-    //         );
-    //       }
+      } catch (error) {
+        console.error(`Error processing segment ${segment.originalIndex}:`, error);
+        
+        // Keep original segment if processing fails
+        adjustedSegments.push({
+          ...segment,
+          adjustedStart: segment.start,
+          adjustedEnd: segment.end,
+        });
+      }
+    }
 
-    //       const adjustedPath = await this.applySpeechTempoAdjustment(
-    //         segment.path,
-    //         clampedTempo,
-    //         segment.originalIndex
-    //       );
-
-    //       adjustedSegments.push({
-    //         ...segment,
-    //         path: adjustedPath,
-    //         adjustedStart: segment.start,
-    //         adjustedEnd: segment.end,
-    //       });
-    //     } else {
-    //       adjustedSegments.push({
-    //         ...segment,
-    //         adjustedStart: segment.start,
-    //         adjustedEnd: segment.end,
-    //       });
-    //     }
-    //   } catch (error) {
-    //     console.error(
-    //       `Error processing segment ${segment.originalIndex}:`,
-    //       error
-    //     );
-    //     adjustedSegments.push({
-    //       ...segment,
-    //       adjustedStart: segment.start,
-    //       adjustedEnd: segment.end,
-    //     });
-    //   }
-    // }
-
-    return segments;
+    return adjustedSegments;
   }
 
-  private async applySpeechTempoAdjustment(
-    inputPath: string,
-    tempo: number,
-    segmentIndex: number
-  ): Promise<string> {
-    const outputPath = inputPath.replace(/\.wav$/, `_tempo${segmentIndex}.wav`);
 
-    // Handle daisy-chaining for tempo > 2.0 or < 0.5
-    const buildAtempoChain = (value: number): string => {
-      const chain: number[] = [];
-      while (value > 2.0) {
-        chain.push(2.0);
-        value /= 2.0;
-      }
-      while (value < 0.5) {
-        chain.push(0.5);
-        value /= 0.5;
-      }
-      chain.push(value);
-      return chain.map((t) => `atempo=${t.toFixed(5)}`).join(",");
-    };
-
-    const atempoFilter = buildAtempoChain(tempo);
-
-    await execAsync(
-      `ffmpeg -y -i "${inputPath}" -filter:a "${atempoFilter}" "${outputPath}"`
-    );
-
-    return outputPath;
-  }
 
   private async processSpeechForConsistency(
     speechPath: string,
