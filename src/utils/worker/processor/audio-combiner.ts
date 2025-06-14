@@ -13,6 +13,8 @@ interface SpeechSegment {
   start: number;
   end: number;
   originalIndex: number;
+  adjustedStart?: number;
+  adjustedEnd?: number;
 }
 
 interface VoiceActivitySegment {
@@ -86,7 +88,7 @@ export class AudioCombiner {
       // Process each speech segment and prepare filter complex
       let speechSegmentPaths: SpeechSegment[] = [];
 
-      // First, create processed speech segments with exact duration matching
+      // First, create processed speech segments with consistent quality
       for (let i = 0; i < speechPaths.length; i++) {
         const segment = transcript[i];
         if (
@@ -98,21 +100,12 @@ export class AudioCombiner {
           continue;
         }
 
-        // Calculate target duration from transcript
-        const targetDuration = segment.end - segment.start;
-        
-        if (targetDuration <= 0) {
-          console.warn(`Invalid duration for segment ${i}: ${targetDuration}s, skipping`);
-          continue;
-        }
-
-        // Process each speech file to match exact transcript duration
+        // Process each speech file to ensure consistent quality
         const processedSpeechPath = await this.processSpeechForConsistency(
           speechPaths[i],
           outputDir,
           i,
-          bgAnalysis,
-          targetDuration // Pass the target duration
+          bgAnalysis
         );
 
         speechSegmentPaths.push({
@@ -123,59 +116,60 @@ export class AudioCombiner {
         });
       }
 
-      // Sort speech segments by start time (natural overlapping preserved)
+      // Sort speech segments by start time and resolve overlaps
       speechSegmentPaths.sort((a, b) => a.start - b.start);
 
-      // Log the processed segments with matched durations
+      // Resolve overlapping segments
+      console.log("Resolving overlapping speech segments...");
+      speechSegmentPaths = await this.resolveOverlappingSegments(
+        speechSegmentPaths
+      );
+
+      // Log the processed segments
       console.log(
-        "Speech segments with matched durations:",
+        "Speech segments after overlap resolution:",
         speechSegmentPaths.map((segment) => ({
-          start: segment.start,
-          end: segment.end,
+          start: segment.adjustedStart || segment.start,
+          end: segment.adjustedEnd || segment.end,
           originalIndex: segment.originalIndex,
-          duration: segment.end - segment.start,
+          duration:
+            (segment.adjustedEnd || segment.end) -
+            (segment.adjustedStart || segment.start),
         }))
       );
 
       // Now build a filter complex to precisely position each speech segment
       let filterComplex = "";
 
-      // Add each speech input to filter with proper delay based on original start time
+      // Add each speech input to filter with proper delay based on adjusted start time
       for (let i = 0; i < speechSegmentPaths.length; i++) {
         const segment = speechSegmentPaths[i];
         const inputIndex = i + 1; // +1 because silent background is input 0
-        const startTime = segment.start; // Use original start time since duration is now matched
+        const startTime = segment.adjustedStart || segment.start;
 
-        // Add each speech input to filter - positioned by original timestamp
+        // Add each speech input to filter - with volume already boosted and positioned by timestamp
         filterComplex += `[${inputIndex}:a]adelay=${Math.round(
           startTime * 1000
         )}|${Math.round(startTime * 1000)}[speech${i}];`;
       }
 
-      // Build mix chain with better volume management
+      // Build mix chain
       if (speechSegmentPaths.length > 0) {
         filterComplex += `[0:a]`;
         for (let i = 0; i < speechSegmentPaths.length; i++) {
           filterComplex += `[speech${i}]`;
         }
-        // Mix all speech segments with silent background - speech should be dominant
+        // Mix all speech segments with silent background
         filterComplex += `amix=inputs=${
           speechSegmentPaths.length + 1
-        }:duration=first:weights=`;
-        
-        // Silent background gets minimal weight, speech gets full weight
-        filterComplex += `0.1`;
-        for (let i = 0; i < speechSegmentPaths.length; i++) {
-          filterComplex += ` 1.0`; // Each speech segment gets full weight
-        }
-        filterComplex += `[speechmix];`;
+        }:duration=first[speechmix];`;
       }
 
-      // Keep background at reduced volume to not overpower speech
-      filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=0.3[bg];`;
+      // Keep background at original volume (1.0 = 100%)
+      filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=1.0[bg];`;
 
-      // Final mix - prioritize speech over background
-      filterComplex += `[speechmix][bg]amix=inputs=2:duration=first:weights=1.0 0.3[out]`;
+      // Final mix of speech and background - with equal weights
+      filterComplex += `[speechmix][bg]amix=inputs=2:duration=first:weights=0.5 0.5[out]`;
 
       // Create input arguments string for ffmpeg
       let inputArgs = `-threads 2 -i "${silentBgPath}" `;
@@ -428,109 +422,116 @@ export class AudioCombiner {
     }
   }
 
+  /**
+   * Resolve overlapping speech segments by adjusting their timing
+   */
+  private async resolveOverlappingSegments(
+    segments: SpeechSegment[]
+  ): Promise<SpeechSegment[]> {
+    const resolvedSegments = [...segments];
+    const minGapBetweenSegments = 0.15; // 100ms minimum gap between segments
 
+    for (let i = 0; i < resolvedSegments.length - 1; i++) {
+      const current = resolvedSegments[i];
+      const next = resolvedSegments[i + 1];
+
+      const currentEnd = current.adjustedEnd || current.end;
+      const nextStart = next.adjustedStart || next.start;
+
+      // Check if segments overlap or are too close
+      if (currentEnd + minGapBetweenSegments > nextStart) {
+        console.log(
+          `Resolving overlap between segments ${current.originalIndex} and ${next.originalIndex}`
+        );
+
+        const overlapDuration = currentEnd - nextStart + minGapBetweenSegments;
+        const currentDuration =
+          currentEnd - (current.adjustedStart || current.start);
+        const nextDuration = (next.adjustedEnd || next.end) - nextStart;
+
+        // Decide how to resolve based on segment durations
+        if (currentDuration > nextDuration) {
+          // Shorten the current segment
+          current.adjustedEnd = nextStart - minGapBetweenSegments;
+          console.log(
+            `Shortened segment ${
+              current.originalIndex
+            } to end at ${current.adjustedEnd.toFixed(2)}s`
+          );
+        } else {
+          // Delay the next segment
+          const delay = currentEnd + minGapBetweenSegments - nextStart;
+          next.adjustedStart = nextStart + delay;
+          next.adjustedEnd = (next.adjustedEnd || next.end) + delay;
+          console.log(
+            `Delayed segment ${
+              next.originalIndex
+            } to start at ${next.adjustedStart.toFixed(2)}s`
+          );
+        }
+
+        // Validate the adjusted segment doesn't have negative duration
+        if (
+          current.adjustedEnd &&
+          current.adjustedEnd <= (current.adjustedStart || current.start)
+        ) {
+          console.warn(
+            `Segment ${current.originalIndex} would have negative duration, skipping`
+          );
+          // Mark for removal by setting a flag
+          (current as any).skip = true;
+        }
+      }
+    }
+
+    // Filter out segments marked for skipping and segments that are too short
+    return resolvedSegments.filter((segment) => {
+      const duration =
+        (segment.adjustedEnd || segment.end) -
+        (segment.adjustedStart || segment.start);
+      return !(segment as any).skip && duration > 0.1; // Keep segments longer than 100ms
+    });
+  }
 
   private async processSpeechForConsistency(
     speechPath: string,
     outputDir: string,
     index: number,
-    bgAnalysis: any,
-    targetDuration: number // Add target duration parameter
+    bgAnalysis: any
   ): Promise<string> {
     try {
-      console.log(`Processing speech file ${index} to match target duration ${targetDuration.toFixed(3)}s...`);
-
-      // First, get the actual TTS duration
-      const actualDuration = await this.getTTSFileDuration(speechPath);
-      console.log(`TTS file ${index}: actual=${actualDuration.toFixed(3)}s, target=${targetDuration.toFixed(3)}s`);
+      console.log(`Processing speech file ${index} (boosting volume)...`);
 
       // Create a processed speech file path
-      const processedPath = path.join(outputDir, `processed_speech_${index}.wav`);
-
-      // Calculate speed needed: how much faster/slower to make the speech
-      const speedRatio = actualDuration / targetDuration; // Speed multiplier needed
-      
-      let filters = [];
-      
-      // Always adjust speed to match target duration exactly
-      console.log(`Adjusting segment ${index}: ${actualDuration.toFixed(3)}s → ${targetDuration.toFixed(3)}s (need ${speedRatio.toFixed(3)}x speed)`);
-      
-      // Handle atempo filter limits (0.5 - 100.0)
-      if (speedRatio >= 0.5 && speedRatio <= 2.0) {
-        // Single atempo filter for reasonable speed changes
-        filters.push(`atempo=${speedRatio.toFixed(3)}`);
-      } else if (speedRatio > 2.0) {
-        // Need to speed up a lot: chain multiple atempo filters
-        let remainingRatio = speedRatio;
-        let tempoFilters = [];
-        
-        while (remainingRatio > 2.0) {
-          tempoFilters.push('atempo=2.0');
-          remainingRatio /= 2.0;
-        }
-        tempoFilters.push(`atempo=${remainingRatio.toFixed(3)}`);
-        
-        filters.push(tempoFilters.join(','));
-        console.log(`Chained speed up: ${tempoFilters.join(',')}`);
-      } else {
-        // Need to slow down a lot: chain multiple atempo filters  
-        let remainingRatio = speedRatio;
-        let tempoFilters = [];
-        
-        while (remainingRatio < 0.5) {
-          tempoFilters.push('atempo=0.5');
-          remainingRatio /= 0.5;
-        }
-        tempoFilters.push(`atempo=${remainingRatio.toFixed(3)}`);
-        
-        filters.push(tempoFilters.join(','));
-        console.log(`Chained slow down: ${tempoFilters.join(',')}`);
-      }
-
-      // Add volume boost and format conversion - boost speech significantly
-      const channelLayout = bgAnalysis.format.channels === 1 ? "mono" : "stereo";
-      filters.push(`volume=5.0`); // Increased from 3.0 to 5.0 for better audibility
-      filters.push(`aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout}`);
-
-      // Combine all filters
-      const filterString = filters.join(',');
-
-      // Process the speech file with duration matching and volume boost
-      await execAsync(
-        `ffmpeg -threads 2 -i "${speechPath}" -af "${filterString}" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${processedPath}"`
+      const processedPath = path.join(
+        outputDir,
+        `processed_speech_${index}.wav`
       );
 
-      // Verify the output file and check final duration
-      await this.fileProcessor.verifyFile(processedPath);
-      
-      const finalDuration = await this.getTTSFileDuration(processedPath);
-      const durationDiff = Math.abs(finalDuration - targetDuration);
-      
-      console.log(`Speech ${index} final duration: ${finalDuration.toFixed(3)}s (diff: ${durationDiff.toFixed(3)}s)`);
-      
-      if (durationDiff > 0.1) {
-        console.warn(`Duration mismatch for segment ${index}: expected ${targetDuration.toFixed(3)}s, got ${finalDuration.toFixed(3)}s`);
-      }
+      // // Apply format conversion and volume boost
+      // const channelLayout =
+      //   bgAnalysis.format.channels === 1 ? "mono" : "stereo";
+
+      // // Apply significant volume boost to make speech clearly audible
+      // // Using volume=3.0 for triple the volume
+      // const boostFilter = `aformat=sample_fmts=fltp:sample_rates=${bgAnalysis.format.sampleRate}:channel_layouts=${channelLayout},volume=3.0`;
+
+      // // Process the speech file with volume boost
+      // await execAsync(
+      //   `ffmpeg -threads 2 -i "${speechPath}" -af "${boostFilter}" -c:a pcm_s24le -ar ${bgAnalysis.format.sampleRate} -ac ${bgAnalysis.format.channels} "${processedPath}"`
+      // );
+
+      await execAsync(
+        `ffmpeg -i "${speechPath}" -af "volume=3.0" "${processedPath}"`
+      )
+
+      // // Verify the output file
+      // await this.fileProcessor.verifyFile(processedPath);
 
       return processedPath;
     } catch (error) {
       console.error(`Error processing speech file ${index}:`, error);
       throw error;
-    }
-  }
-
-  /**
-   * Get the duration of a TTS file using ffprobe
-   */
-  private async getTTSFileDuration(filePath: string): Promise<number> {
-    try {
-      const { stdout } = await execAsync(
-        `ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${filePath}"`
-      );
-      return parseFloat(stdout.trim());
-    } catch (error) {
-      console.error(`Error getting duration for ${filePath}:`, error);
-      throw new Error(`Failed to get duration for ${filePath}`);
     }
   }
 
