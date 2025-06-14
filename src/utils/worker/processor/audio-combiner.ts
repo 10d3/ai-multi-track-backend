@@ -108,8 +108,8 @@ export class AudioCombiner {
 
         // Add each speech input to filter - with volume already boosted and positioned by timestamp
         filterComplex += `[${inputIndex}:a]adelay=${Math.round(
-          startTime * 1000
-        )}|${Math.round(startTime * 1000)}[speech${i}];`;
+          startTime
+        )}|${Math.round(startTime)}[speech${i}];`;
       }
 
       // Build mix chain for speech segments
@@ -156,7 +156,9 @@ export class AudioCombiner {
       await this.fileProcessor.verifyFile(finalPath);
 
       // Apply final processing
-      const processedPath = await this.applyConsistentFinalProcessing(finalPath);
+      const processedPath = await this.applyConsistentFinalProcessing(
+        finalPath
+      );
 
       return processedPath;
     } catch (error) {
@@ -310,13 +312,17 @@ export class AudioCombiner {
       try {
         // If your segment.start and segment.end are in milliseconds
         const targetDurationMs = segment.end - segment.start; // milliseconds
-        const targetDurationSec = targetDurationMs / 1000;   // convert to seconds
+        const targetDurationSec = targetDurationMs; // convert to seconds
 
-        console.log("duration in miliseconde:", targetDurationMs)
+        console.log("duration in miliseconde:", targetDurationMs);
 
-        console.log("duration is :", targetDurationSec)
-        
-        console.log(`Processing segment ${segment.originalIndex} - target duration: ${targetDurationSec.toFixed(3)}s`);
+        console.log("duration is :", targetDurationSec);
+
+        console.log(
+          `Processing segment ${
+            segment.originalIndex
+          } - target duration: ${targetDurationSec.toFixed(3)}s`
+        );
 
         // Create output path for tempo-adjusted audio
         const adjustedPath = await this.fileProcessor.createTempPath(
@@ -326,7 +332,7 @@ export class AudioCombiner {
 
         // Use Python script to adjust tempo
         const scriptPath = path.resolve("./src/script/adjust_speech_timing.py");
-        
+
         const { stdout, stderr } = await execAsync(
           `python "${scriptPath}" "${segment.path}" ${targetDurationSec} "${adjustedPath}"`
         );
@@ -335,7 +341,7 @@ export class AudioCombiner {
         if (stdout) {
           console.log(`Segment ${segment.originalIndex} processing:`, stdout);
         }
-        
+
         if (stderr) {
           console.warn(`Segment ${segment.originalIndex} warnings:`, stderr);
         }
@@ -349,10 +355,12 @@ export class AudioCombiner {
           adjustedStart: segment.start,
           adjustedEnd: segment.end,
         });
-
       } catch (error) {
-        console.error(`Error processing segment ${segment.originalIndex}:`, error);
-        
+        console.error(
+          `Error processing segment ${segment.originalIndex}:`,
+          error
+        );
+
         // Keep original segment if processing fails
         adjustedSegments.push({
           ...segment,
@@ -364,8 +372,6 @@ export class AudioCombiner {
 
     return adjustedSegments;
   }
-
-
 
   private async processSpeechForConsistency(
     speechPath: string,

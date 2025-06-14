@@ -54,8 +54,8 @@ export const formatTranscreationForWorker = async (
 
   // Map transcripts to the format expected by the worker
   const transcript = transcreation.transcript.map((t) => ({
-    start: t.start / 1000, // Convert milliseconds to seconds if needed
-    end: t.end / 1000, // Convert milliseconds to seconds if needed
+    start: t.start, // Convert milliseconds to seconds if needed
+    end: t.end, // Convert milliseconds to seconds if needed
     text: t.textTranslated || t.text, // Use translated text if available, otherwise original
     speaker: t.speaker,
     emotion: t.emotion,

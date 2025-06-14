@@ -83,7 +83,7 @@ export class ZyphraTTS {
 
   constructor(fileProcessor: FileProcessor) {
     this.fileProcessor = fileProcessor;
-    console.log("[ZyphraTTS] Initialized ZyphraTTS processor");
+    // console.log("[ZyphraTTS] Initialized ZyphraTTS processor");
   }
 
   private getDefaultEmotions(): EmotionWeights {
@@ -110,9 +110,9 @@ export class ZyphraTTS {
     speakerId: string = "default"
   ): Promise<string> {
     try {
-      console.log(
-        `[ZyphraTTS] Creating reference audio for speaker ${speakerId} from ${audioPath}`
-      );
+      // console.log(
+      //   `[ZyphraTTS] Creating reference audio for speaker ${speakerId} from ${audioPath}`
+      // );
 
       // Verify the input file exists
       await this.fileProcessor.verifyFile(audioPath);
@@ -144,7 +144,7 @@ export class ZyphraTTS {
 
       await this.fileProcessor.verifyFile(outputPath);
 
-      console.log(`[ZyphraTTS] Created reference audio: ${outputPath}`);
+      // console.log(`[ZyphraTTS] Created reference audio: ${outputPath}`);
       return outputPath;
     } catch (error) {
       console.error(`[ZyphraTTS] Failed to create reference audio:`, error);
@@ -158,19 +158,19 @@ export class ZyphraTTS {
     minSeconds: number = 30 // Updated from 10 to 30 seconds minimum
   ): Promise<string> {
     try {
-      console.log(
-        `[ZyphraTTS] Concatenating reference audios. Primary: ${primaryAudioPath}, Secondary: ${secondaryAudioPath}`
-      );
+      // console.log(
+      //   `[ZyphraTTS] Concatenating reference audios. Primary: ${primaryAudioPath}, Secondary: ${secondaryAudioPath}`
+      // );
 
       const primaryDuration = await this.fileProcessor.getAudioDuration(
         primaryAudioPath
       );
-      console.log(`[ZyphraTTS] Primary audio duration: ${primaryDuration}s`);
+      // console.log(`[ZyphraTTS] Primary audio duration: ${primaryDuration}s`);
 
       if (primaryDuration >= minSeconds) {
-        console.log(
-          `[ZyphraTTS] Primary audio is long enough (${primaryDuration}s >= ${minSeconds}s). Using it directly.`
-        );
+        // console.log(
+        //   `[ZyphraTTS] Primary audio is long enough (${primaryDuration}s >= ${minSeconds}s). Using it directly.`
+        // );
         return readFileSync(primaryAudioPath).toString("base64");
       }
 
@@ -178,16 +178,16 @@ export class ZyphraTTS {
         "combined_reference",
         "wav"
       );
-      console.log(
-        `[ZyphraTTS] Created temp path for combined reference: ${tempPath}`
-      );
+      // console.log(
+      //   `[ZyphraTTS] Created temp path for combined reference: ${tempPath}`
+      // );
 
       // Check if we need to loop the primary audio to reach minimum duration
       if (primaryDuration > 0 && primaryDuration < minSeconds) {
         const loopCount = Math.ceil(minSeconds / primaryDuration);
-        console.log(
-          `[ZyphraTTS] Looping primary audio ${loopCount} times to reach minimum duration`
-        );
+        // console.log(
+        //   `[ZyphraTTS] Looping primary audio ${loopCount} times to reach minimum duration`
+        // );
 
         // Create a filter complex to loop the primary audio
         const loopFilter = `[0:a]aloop=loop=${loopCount - 1}:size=2e+09[out]`;
@@ -198,7 +198,7 @@ export class ZyphraTTS {
           -map "[out]" -af "highpass=f=80,lowpass=f=12000,afftdn=nf=-30:nt=w,acompressor=threshold=0.05:ratio=4:attack=200:release=1000,adeclick=t=1:b=5,aresample=44100,loudnorm=I=-16:TP=-1.5:LRA=11" \
           "${tempPath}"`;
 
-        console.log(`[ZyphraTTS] Executing FFmpeg loop command: ${ffmpegCmd}`);
+        // console.log(`[ZyphraTTS] Executing FFmpeg loop command: ${ffmpegCmd}`);
         await execAsync(ffmpegCmd);
       } else {
         // Concatenate two different audio files with enhanced processing
@@ -206,20 +206,20 @@ export class ZyphraTTS {
           -filter_complex "[0:a][1:a]concat=n=2:v=0:a=1[concat];[concat]highpass=f=80,lowpass=f=12000,afftdn=nf=-30:nt=w,acompressor=threshold=0.05:ratio=4:attack=200:release=1000,adeclick=t=1:b=5,aresample=44100,loudnorm=I=-16:TP=-1.5:LRA=11[out]" \
           -map "[out]" "${tempPath}"`;
 
-        console.log(
-          `[ZyphraTTS] Executing FFmpeg concatenation command: ${ffmpegCmd}`
-        );
+        // console.log(
+        //   `[ZyphraTTS] Executing FFmpeg concatenation command: ${ffmpegCmd}`
+        // );
         await execAsync(ffmpegCmd);
       }
 
-      console.log(`[ZyphraTTS] FFmpeg processing completed successfully`);
+      // console.log(`[ZyphraTTS] FFmpeg processing completed successfully`);
       await this.fileProcessor.verifyFile(tempPath);
 
       // Get the final duration to verify
       const finalDuration = await this.fileProcessor.getAudioDuration(tempPath);
-      console.log(
-        `[ZyphraTTS] Final reference audio duration: ${finalDuration}s`
-      );
+      // console.log(
+      //   `[ZyphraTTS] Final reference audio duration: ${finalDuration}s`
+      // );
 
       return readFileSync(tempPath).toString("base64");
     } catch (error) {
@@ -232,41 +232,41 @@ export class ZyphraTTS {
   }
 
   async getZyphraClient(): Promise<ZyphraClient> {
-    console.log("[ZyphraTTS] Getting Zyphra client");
+    // console.log("[ZyphraTTS] Getting Zyphra client");
 
     if (this.zyphraClientTTS) {
-      console.log("[ZyphraTTS] Returning existing Zyphra client");
+      // console.log("[ZyphraTTS] Returning existing Zyphra client");
       return this.zyphraClientTTS;
     }
 
     if (this.zyphraClientPromise) {
-      console.log("[ZyphraTTS] Returning existing client promise");
+      // console.log("[ZyphraTTS] Returning existing client promise");
       return this.zyphraClientPromise;
     }
 
-    console.log("[ZyphraTTS] Creating new Zyphra client");
+    // console.log("[ZyphraTTS] Creating new Zyphra client");
     if (!process.env.ZYPHRA_API_KEY) {
       console.error(
         "[ZyphraTTS] ZYPHRA_API_KEY environment variable is not set"
       );
     } else {
-      console.log(
-        "[ZyphraTTS] ZYPHRA_API_KEY is set (length: " +
-          process.env.ZYPHRA_API_KEY.length +
-          ")"
-      );
+      // console.log(
+      //   "[ZyphraTTS] ZYPHRA_API_KEY is set (length: " +
+      //     process.env.ZYPHRA_API_KEY.length +
+      //     ")"
+      // );
     }
 
     this.zyphraClientPromise = (async () => {
       try {
-        console.log("[ZyphraTTS] Importing ZyphraClient");
+        // console.log("[ZyphraTTS] Importing ZyphraClient");
         const { ZyphraClient } = await import("@zyphra/client");
-        console.log("[ZyphraTTS] ZyphraClient imported successfully");
+        // console.log("[ZyphraTTS] ZyphraClient imported successfully");
 
         this.zyphraClientTTS = new ZyphraClient({
           apiKey: process.env.ZYPHRA_API_KEY as string,
         });
-        console.log("[ZyphraTTS] ZyphraClient initialized successfully");
+        // console.log("[ZyphraTTS] ZyphraClient initialized successfully");
 
         return this.zyphraClientTTS;
       } catch (initError: any) {
@@ -295,11 +295,11 @@ export class ZyphraTTS {
     start,
   }: ZyphraTTSRequest): Promise<string> {
     try {
-      console.log(
-        `[ZyphraTTS] Processing TTS request for voice: ${voice_name} (${voice_id}), text length: ${
-          textToSpeech?.length || 0
-        }`
-      );
+      // console.log(
+      //   `[ZyphraTTS] Processing TTS request for voice: ${voice_name} (${voice_id}), text length: ${
+      //     textToSpeech?.length || 0
+      //   }`
+      // );
 
       if (!textToSpeech || !voice_name || !voice_id) {
         console.error("[ZyphraTTS] Missing required parameters:", {
@@ -310,15 +310,15 @@ export class ZyphraTTS {
         throw new Error("Missing required parameters for TTS");
       }
 
-      console.log("[ZyphraTTS] Getting Zyphra client");
+      // console.log("[ZyphraTTS] Getting Zyphra client");
       const client = await this.getZyphraClient();
-      console.log("[ZyphraTTS] Got Zyphra client successfully");
+      // console.log("[ZyphraTTS] Got Zyphra client successfully");
 
       const isJapanese = voice_id.startsWith("ja");
       const isCloning = voice_id === "cloning-voice";
-      console.log(
-        `[ZyphraTTS] Voice is ${isJapanese ? "Japanese" : "non-Japanese"}`
-      );
+      // console.log(
+      //   `[ZyphraTTS] Voice is ${isJapanese ? "Japanese" : "non-Japanese"}`
+      // );
 
       // Process reference audio for cloning or if provided
       let speaker_audio: string | undefined;
@@ -327,13 +327,13 @@ export class ZyphraTTS {
           throw new Error("Reference audio is required for voice cloning");
         }
         try {
-          console.log(
-            `[ZyphraTTS] Processing reference audio for cloning: ${referenceAudioPath}`
-          );
+          // console.log(
+          //   `[ZyphraTTS] Processing reference audio for cloning: ${referenceAudioPath}`
+          // );
           speaker_audio = readFileSync(referenceAudioPath).toString("base64");
-          console.log(
-            `[ZyphraTTS] Reference audio converted to base64 (length: ${speaker_audio.length})`
-          );
+          // console.log(
+          //   `[ZyphraTTS] Reference audio converted to base64 (length: ${speaker_audio.length})`
+          // );
         } catch (error) {
           console.error(
             "[ZyphraTTS] Failed to read reference audio for cloning:",
@@ -365,14 +365,14 @@ export class ZyphraTTS {
         baseParams.speaker_audio = speaker_audio;
       }
 
-      console.log("[ZyphraTTS] Base params:", {
-        textLength: baseParams.text.length,
-        speaking_rate: baseParams.speaking_rate,
-        mime_type: baseParams.mime_type,
-        has_speaker_audio: !!baseParams.speaker_audio,
-        default_voice_name: !!baseParams.default_voice_name,
-        language_iso_code: baseParams.language_iso_code,
-      });
+      // console.log("[ZyphraTTS] Base params:", {
+      //   textLength: baseParams.text.length,
+      //   speaking_rate: baseParams.speaking_rate,
+      //   mime_type: baseParams.mime_type,
+      //   has_speaker_audio: !!baseParams.speaker_audio,
+      //   default_voice_name: !!baseParams.default_voice_name,
+      //   language_iso_code: baseParams.language_iso_code,
+      // });
 
       // Set parameters based on voice type
       const params: TTSParams = isCloning
@@ -397,17 +397,17 @@ export class ZyphraTTS {
             emotion: emotion || this.getDefaultEmotions(),
           };
 
-      console.log("[ZyphraTTS] Final params:", {
-        model: params.model,
-        vqscore: params.vqscore,
-        speaker_noised: params.speaker_noised,
-        fmax: params.fmax,
-        has_emotion: !!params.emotion,
-      });
+      // console.log("[ZyphraTTS] Final params:", {
+      //   model: params.model,
+      //   vqscore: params.vqscore,
+      //   speaker_noised: params.speaker_noised,
+      //   fmax: params.fmax,
+      //   has_emotion: !!params.emotion,
+      // });
 
-      console.log(
-        `[ZyphraTTS] Setting up timeout promise (${TTS_TIMEOUT_MS}ms)`
-      );
+      // console.log(
+      //   `[ZyphraTTS] Setting up timeout promise (${TTS_TIMEOUT_MS}ms)`
+      // );
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(
           () =>
@@ -420,7 +420,7 @@ export class ZyphraTTS {
         );
       });
 
-      console.log("[ZyphraTTS] Calling Zyphra API with retry mechanism");
+      // console.log("[ZyphraTTS] Calling Zyphra API with retry mechanism");
 
       let response: any = null;
       let lastError: any = null;
@@ -433,7 +433,7 @@ export class ZyphraTTS {
             timeoutPromise,
           ])) as any;
 
-          console.log("[ZyphraTTS] Received response from Zyphra API");
+          // console.log("[ZyphraTTS] Received response from Zyphra API");
           break; // Success, exit the retry loop
         } catch (error: any) {
           lastError = error;
@@ -444,9 +444,9 @@ export class ZyphraTTS {
           if (shouldRetry && retryCount < MAX_RETRIES) {
             retryCount++;
             const delay = INITIAL_RETRY_DELAY_MS * Math.pow(2, retryCount - 1); // Exponential backoff
-            console.log(
-              `[ZyphraTTS] Request timed out (${error.message}). Retrying ${retryCount}/${MAX_RETRIES} after ${delay}ms`
-            );
+            // console.log(
+            //   `[ZyphraTTS] Request timed out (${error.message}). Retrying ${retryCount}/${MAX_RETRIES} after ${delay}ms`
+            // );
 
             // Wait before retrying
             await new Promise((resolve) => setTimeout(resolve, delay));
@@ -475,19 +475,19 @@ export class ZyphraTTS {
         throw new Error("No audio content generated");
       }
 
-      console.log("[ZyphraTTS] Response type:", typeof response);
-      console.log("[ZyphraTTS] Response keys:", Object.keys(response));
+      // console.log("[ZyphraTTS] Response type:", typeof response);
+      // console.log("[ZyphraTTS] Response keys:", Object.keys(response));
 
       // Extract audio data from response
       const audioData = response.audioData || response.data || response;
-      console.log("[ZyphraTTS] Audio data type:", typeof audioData);
-      console.log("[ZyphraTTS] Audio data is instance of:", {
-        Blob: audioData instanceof Blob,
-        Buffer: Buffer.isBuffer(audioData),
-        String: typeof audioData === "string",
-        ArrayBuffer: audioData instanceof ArrayBuffer,
-        ArrayBufferView: ArrayBuffer.isView(audioData),
-      });
+      // console.log("[ZyphraTTS] Audio data type:", typeof audioData);
+      // console.log("[ZyphraTTS] Audio data is instance of:", {
+      //   Blob: audioData instanceof Blob,
+      //   Buffer: Buffer.isBuffer(audioData),
+      //   String: typeof audioData === "string",
+      //   ArrayBuffer: audioData instanceof ArrayBuffer,
+      //   ArrayBufferView: ArrayBuffer.isView(audioData),
+      // });
 
       if (!audioData) {
         console.error("[ZyphraTTS] Audio data not found in the response");
@@ -496,27 +496,27 @@ export class ZyphraTTS {
 
       // Handle different response types properly
       let audioBuffer: Buffer;
-      console.log("[ZyphraTTS] Processing audio data based on type");
+      // console.log("[ZyphraTTS] Processing audio data based on type");
 
       if (audioData instanceof Blob) {
         // Convert Blob to Buffer
-        console.log("[ZyphraTTS] Converting Blob to ArrayBuffer");
+        // console.log("[ZyphraTTS] Converting Blob to ArrayBuffer");
         const arrayBuffer = await audioData.arrayBuffer();
-        console.log("[ZyphraTTS] Converting ArrayBuffer to Buffer");
+        // console.log("[ZyphraTTS] Converting ArrayBuffer to Buffer");
         audioBuffer = Buffer.from(arrayBuffer);
       } else if (Buffer.isBuffer(audioData)) {
-        console.log("[ZyphraTTS] Using existing Buffer");
+        // console.log("[ZyphraTTS] Using existing Buffer");
         audioBuffer = audioData;
       } else if (typeof audioData === "string") {
-        console.log("[ZyphraTTS] Converting string to Buffer (base64)");
+        // console.log("[ZyphraTTS] Converting string to Buffer (base64)");
         audioBuffer = Buffer.from(audioData, "base64");
       } else if (
         audioData instanceof ArrayBuffer ||
         ArrayBuffer.isView(audioData)
       ) {
-        console.log(
-          "[ZyphraTTS] Converting ArrayBuffer/ArrayBufferView to Buffer"
-        );
+        // console.log(
+        //   "[ZyphraTTS] Converting ArrayBuffer/ArrayBufferView to Buffer"
+        // );
         audioBuffer = Buffer.from(
           new Uint8Array(
             audioData instanceof ArrayBuffer ? audioData : audioData.buffer
@@ -530,26 +530,26 @@ export class ZyphraTTS {
         throw new Error(`Unsupported audio data type: ${typeof audioData}`);
       }
 
-      console.log(
-        `[ZyphraTTS] Audio buffer created successfully (size: ${audioBuffer.length} bytes)`
-      );
+      // console.log(
+      //   `[ZyphraTTS] Audio buffer created successfully (size: ${audioBuffer.length} bytes)`
+      // );
 
       // Write the audio data to a temporary file
       const tempAudioPath = await this.fileProcessor.createTempPath(
         "tts_audio",
         "mp3"
       );
-      console.log(`[ZyphraTTS] Created temp audio path: ${tempAudioPath}`);
+      // console.log(`[ZyphraTTS] Created temp audio path: ${tempAudioPath}`);
 
       await fs.writeFile(tempAudioPath, audioBuffer);
-      console.log(`[ZyphraTTS] Wrote audio buffer to temp file`);
+      // console.log(`[ZyphraTTS] Wrote audio buffer to temp file`);
 
       await this.fileProcessor.verifyFile(tempAudioPath);
-      console.log(`[ZyphraTTS] Verified temp audio file exists`);
+      // console.log(`[ZyphraTTS] Verified temp audio file exists`);
 
-      console.log(`[ZyphraTTS] Converting audio to WAV format`);
+      // console.log(`[ZyphraTTS] Converting audio to WAV format`);
       const wavPath = await this.fileProcessor.convertAudioToWav(tempAudioPath);
-      console.log(`[ZyphraTTS] Converted audio to WAV: ${wavPath}`);
+      // console.log(`[ZyphraTTS] Converted audio to WAV: ${wavPath}`);
 
       return wavPath;
     } catch (error: any) {
@@ -568,11 +568,11 @@ export class ZyphraTTS {
     ttsRequests: ZyphraTTSRequest[],
     language: string
   ): Promise<Array<string>> {
-    console.log(
-      `[ZyphraTTS] Processing multiple TTS requests (count: ${
-        ttsRequests?.length || 0
-      })`
-    );
+    // console.log(
+    //   `[ZyphraTTS] Processing multiple TTS requests (count: ${
+    //     ttsRequests?.length || 0
+    //   })`
+    // );
 
     if (!ttsRequests?.length) {
       console.error("[ZyphraTTS] No TTS requests provided");
@@ -580,15 +580,15 @@ export class ZyphraTTS {
     }
 
     const results = [];
-    console.log(`[ZyphraTTS] Processing in batches of ${BATCH_SIZE}`);
+    // console.log(`[ZyphraTTS] Processing in batches of ${BATCH_SIZE}`);
 
     for (let i = 0; i < ttsRequests.length; i += BATCH_SIZE) {
       const batch = ttsRequests.slice(i, i + BATCH_SIZE);
-      console.log(
-        `[ZyphraTTS] Processing batch ${
-          Math.floor(i / BATCH_SIZE) + 1
-        }/${Math.ceil(ttsRequests.length / BATCH_SIZE)} (size: ${batch.length})`
-      );
+      // console.log(
+      //   `[ZyphraTTS] Processing batch ${
+      //     Math.floor(i / BATCH_SIZE) + 1
+      //   }/${Math.ceil(ttsRequests.length / BATCH_SIZE)} (size: ${batch.length})`
+      // );
 
       let batchRetryCount = 0;
       let batchSuccess = false;
@@ -630,7 +630,7 @@ export class ZyphraTTS {
           );
 
           // If we get here, the batch was successful
-          console.log(`[ZyphraTTS] Batch completed successfully`);
+          // console.log(`[ZyphraTTS] Batch completed successfully`);
           results.push(...batchResults);
           batchSuccess = true;
         } catch (error: any) {
@@ -643,9 +643,9 @@ export class ZyphraTTS {
             batchRetryCount++;
             const delay =
               INITIAL_RETRY_DELAY_MS * Math.pow(2, batchRetryCount - 1); // Exponential backoff
-            console.log(
-              `[ZyphraTTS] Batch processing failed with timeout error. Retrying batch ${batchRetryCount}/${MAX_RETRIES} after ${delay}ms`
-            );
+            // console.log(
+            //   `[ZyphraTTS] Batch processing failed with timeout error. Retrying batch ${batchRetryCount}/${MAX_RETRIES} after ${delay}ms`
+            // );
 
             // Wait before retrying the batch
             await new Promise((resolve) => setTimeout(resolve, delay));
@@ -669,14 +669,14 @@ export class ZyphraTTS {
         throw lastBatchError;
       }
 
-      console.log(
-        `[ZyphraTTS] Total results so far: ${results.length}/${ttsRequests.length}`
-      );
+      // console.log(
+      //   `[ZyphraTTS] Total results so far: ${results.length}/${ttsRequests.length}`
+      // );
     }
 
-    console.log(
-      `[ZyphraTTS] All TTS requests processed successfully (total: ${results.length})`
-    );
+    // console.log(
+    //   `[ZyphraTTS] All TTS requests processed successfully (total: ${results.length})`
+    // );
     return results;
   }
 
@@ -702,17 +702,17 @@ export class ZyphraTTS {
         audioPath
       );
 
-      console.log(
-        `[ZyphraTTS] Adjusting audio duration: Current=${currentDuration.toFixed(
-          2
-        )}s, Target=${targetDuration.toFixed(2)}s`
-      );
+      // console.log(
+      //   `[ZyphraTTS] Adjusting audio duration: Current=${currentDuration.toFixed(
+      //     2
+      //   )}s, Target=${targetDuration.toFixed(2)}s`
+      // );
 
       // If durations are already very close (within 0.1s), no adjustment needed
       if (Math.abs(currentDuration - targetDuration) < 0.1) {
-        console.log(
-          `[ZyphraTTS] Audio duration already matches target (difference < 0.1s)`
-        );
+        // console.log(
+        //   `[ZyphraTTS] Audio duration already matches target (difference < 0.1s)`
+        // );
         return audioPath;
       }
 
@@ -732,11 +732,11 @@ export class ZyphraTTS {
       if (durationRatio >= 0.7 && durationRatio <= 1.3) {
         // Small difference: Use time stretching with ATEMPO filter
         // ATEMPO has a range limitation of 0.5 to 2.0, but we're only using 0.7 to 1.3
-        console.log(
-          `[ZyphraTTS] Using time stretching with ratio: ${durationRatio.toFixed(
-            2
-          )}`
-        );
+        // console.log(
+        //   `[ZyphraTTS] Using time stretching with ratio: ${durationRatio.toFixed(
+        //     2
+        //   )}`
+        // );
 
         await execAsync(
           `ffmpeg -i "${audioPath}" -filter:a "atempo=${durationRatio}" -c:a pcm_s16le "${adjustedPath}"`
@@ -746,20 +746,20 @@ export class ZyphraTTS {
         if (durationRatio > 1) {
           // Need to extend: Add silence to the end
           const silenceDuration = targetDuration - currentDuration;
-          console.log(
-            `[ZyphraTTS] Adding ${silenceDuration.toFixed(
-              2
-            )}s of silence padding`
-          );
+          // console.log(
+          //   `[ZyphraTTS] Adding ${silenceDuration.toFixed(
+          //     2
+          //   )}s of silence padding`
+          // );
 
           await execAsync(
             `ffmpeg -i "${audioPath}" -af "apad=pad_dur=${silenceDuration}" -c:a pcm_s16le "${adjustedPath}"`
           );
         } else {
           // Need to trim: Keep as much of the speech as possible
-          console.log(
-            `[ZyphraTTS] Trimming audio to ${targetDuration.toFixed(2)}s`
-          );
+          // console.log(
+          //   `[ZyphraTTS] Trimming audio to ${targetDuration.toFixed(2)}s`
+          // );
 
           await execAsync(
             `ffmpeg -i "${audioPath}" -t ${targetDuration} -c:a pcm_s16le "${adjustedPath}"`
@@ -774,11 +774,11 @@ export class ZyphraTTS {
       const finalDuration = await this.fileProcessor.getAudioDuration(
         adjustedPath
       );
-      console.log(
-        `[ZyphraTTS] Audio duration adjustment complete: Final=${finalDuration.toFixed(
-          2
-        )}s (Target=${targetDuration.toFixed(2)}s)`
-      );
+      // console.log(
+      //   `[ZyphraTTS] Audio duration adjustment complete: Final=${finalDuration.toFixed(
+      //     2
+      //   )}s (Target=${targetDuration.toFixed(2)}s)`
+      // );
 
       return adjustedPath;
     } catch (error) {
