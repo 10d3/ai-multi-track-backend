@@ -62,7 +62,7 @@ export const formatTranscreationForWorker = async (
     voice: t.voice || '', // Use voice from transcript if available
   }));
 
-  console.log(transcript[0])
+  // console.log(transcript[0])
 
   // Get language code for TTS
   const languageCode = transcreation.toLanguage || "en-US";
@@ -91,12 +91,12 @@ export const formatTranscreationForWorker = async (
       voiceName = t.voice ? t.voice : "";
     }
 
-    console.log("TTS Request:", {
-      textToSpeech: ssmlText,
-      voice_id: voiceId,
-      voice_name: voiceName,
-      output_format: "MP3",
-    });
+    // console.log("TTS Request:", {
+    //   textToSpeech: ssmlText,
+    //   voice_id: voiceId,
+    //   voice_name: voiceName,
+    //   output_format: "MP3",
+    // });
 
     return {
       textToSpeech: ssmlText,
@@ -110,7 +110,7 @@ export const formatTranscreationForWorker = async (
     };
   });
 
-  console.log(ttsRequests[0])
+  // console.log(ttsRequests[0])
 
   // Create the job data object
   const jobData: JobData = {

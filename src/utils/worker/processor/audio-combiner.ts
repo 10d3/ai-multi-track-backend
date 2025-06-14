@@ -81,21 +81,23 @@ export class AudioCombiner {
       speechSegmentPaths.sort((a, b) => a.start - b.start);
 
       // Adjust speech timing to fit within allocated time slots
-      console.log("Adjusting speech timing to fit duration slots...");
+      // console.log("Adjusting speech timing to fit duration slots...");
       speechSegmentPaths = await this.adjustSpeechTiming(speechSegmentPaths);
 
       // Log the processed segments
-      console.log(
-        "Speech segments after overlap resolution:",
-        speechSegmentPaths.map((segment) => ({
-          start: segment.adjustedStart || segment.start,
-          end: segment.adjustedEnd || segment.end,
+      console.log("Speech segments timing debug:");
+      speechSegmentPaths.forEach((segment, index) => {
+        console.log(`Segment ${index}:`, {
           originalIndex: segment.originalIndex,
+          start: segment.start,
+          end: segment.end,
+          adjustedStart: segment.adjustedStart,
+          adjustedEnd: segment.adjustedEnd,
           duration:
             (segment.adjustedEnd || segment.end) -
             (segment.adjustedStart || segment.start),
-        }))
-      );
+        });
+      });
 
       // Now build a filter complex to precisely position each speech segment
       let filterComplex = "";
