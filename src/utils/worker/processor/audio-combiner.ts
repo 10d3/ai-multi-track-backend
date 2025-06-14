@@ -446,7 +446,7 @@ export class AudioCombiner {
         }
   
         // ✅ Corrected tempo calculation
-        const requiredTempo = targetDuration / actualDuration;
+        const requiredTempo = actualDuration / targetDuration;
   
         console.log(
           `Segment ${segment.originalIndex}: actual=${actualDuration.toFixed(3)}s, target=${targetDuration.toFixed(3)}s, tempo=${requiredTempo.toFixed(3)}`
