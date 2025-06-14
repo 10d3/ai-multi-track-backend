@@ -105,131 +105,131 @@ export class ZyphraTTS {
    * @param speakerId Optional identifier for the speaker
    * @returns Path to the created reference audio file
    */
-  public async createReferenceAudio(
-    audioPath: string,
-    speakerId: string = "default"
-  ): Promise<string> {
-    try {
-      // console.log(
-      //   `[ZyphraTTS] Creating reference audio for speaker ${speakerId} from ${audioPath}`
-      // );
+  // public async createReferenceAudio(
+  //   audioPath: string,
+  //   speakerId: string = "default"
+  // ): Promise<string> {
+  //   try {
+  //     // console.log(
+  //     //   `[ZyphraTTS] Creating reference audio for speaker ${speakerId} from ${audioPath}`
+  //     // );
 
-      // Verify the input file exists
-      await this.fileProcessor.verifyFile(audioPath);
+  //     // Verify the input file exists
+  //     await this.fileProcessor.verifyFile(audioPath);
 
-      // Get audio duration
-      const duration = await this.fileProcessor.getAudioDuration(audioPath);
+  //     // Get audio duration
+  //     const duration = await this.fileProcessor.getAudioDuration(audioPath);
 
-      // Create a reference audio file with optimal duration (minimum 30 seconds)
-      // Increased from 10 seconds to 30 seconds for better voice modeling
-      const targetDuration = Math.min(60, Math.max(30, duration));
-      const startTime =
-        duration > targetDuration ? (duration - targetDuration) / 2 : 0;
+  //     // Create a reference audio file with optimal duration (minimum 30 seconds)
+  //     // Increased from 10 seconds to 30 seconds for better voice modeling
+  //     const targetDuration = Math.min(60, Math.max(30, duration));
+  //     const startTime =
+  //       duration > targetDuration ? (duration - targetDuration) / 2 : 0;
 
-      const outputPath = await this.fileProcessor.createTempPath(
-        `reference_${speakerId}`,
-        "wav"
-      );
+  //     const outputPath = await this.fileProcessor.createTempPath(
+  //       `reference_${speakerId}`,
+  //       "wav"
+  //     );
 
-      // Enhanced preprocessing for cleaner reference audio
-      // 1. Apply highpass filter to remove low-frequency noise
-      // 2. Apply lowpass filter to remove high-frequency noise
-      // 3. Apply noise reduction filter (afftdn) with stronger settings
-      // 4. Apply compression to normalize volume
-      // 5. Apply de-essing to reduce sibilance
-      // 6. Apply final normalization for consistent volume
-      await execAsync(
-        `ffmpeg -i "${audioPath}" -ss ${startTime} -t ${targetDuration} -af "highpass=f=80,lowpass=f=12000,afftdn=nf=-30:nt=w,acompressor=threshold=0.05:ratio=4:attack=200:release=1000,adeclick=t=1:b=5,aresample=44100,loudnorm=I=-16:TP=-1.5:LRA=11" -c:a pcm_s16le "${outputPath}"`
-      );
+  //     // Enhanced preprocessing for cleaner reference audio
+  //     // 1. Apply highpass filter to remove low-frequency noise
+  //     // 2. Apply lowpass filter to remove high-frequency noise
+  //     // 3. Apply noise reduction filter (afftdn) with stronger settings
+  //     // 4. Apply compression to normalize volume
+  //     // 5. Apply de-essing to reduce sibilance
+  //     // 6. Apply final normalization for consistent volume
+  //     await execAsync(
+  //       `ffmpeg -i "${audioPath}" -ss ${startTime} -t ${targetDuration} -af "highpass=f=80,lowpass=f=12000,afftdn=nf=-30:nt=w,acompressor=threshold=0.05:ratio=4:attack=200:release=1000,adeclick=t=1:b=5,aresample=44100,loudnorm=I=-16:TP=-1.5:LRA=11" -c:a pcm_s16le "${outputPath}"`
+  //     );
 
-      await this.fileProcessor.verifyFile(outputPath);
+  //     await this.fileProcessor.verifyFile(outputPath);
 
-      // console.log(`[ZyphraTTS] Created reference audio: ${outputPath}`);
-      return outputPath;
-    } catch (error) {
-      console.error(`[ZyphraTTS] Failed to create reference audio:`, error);
-      throw new Error(`Failed to create reference audio: ${error}`);
-    }
-  }
+  //     // console.log(`[ZyphraTTS] Created reference audio: ${outputPath}`);
+  //     return outputPath;
+  //   } catch (error) {
+  //     console.error(`[ZyphraTTS] Failed to create reference audio:`, error);
+  //     throw new Error(`Failed to create reference audio: ${error}`);
+  //   }
+  // }
 
-  private async concatenateReferenceAudios(
-    primaryAudioPath: string,
-    secondaryAudioPath: string = "fallback_reference.wav",
-    minSeconds: number = 30 // Updated from 10 to 30 seconds minimum
-  ): Promise<string> {
-    try {
-      // console.log(
-      //   `[ZyphraTTS] Concatenating reference audios. Primary: ${primaryAudioPath}, Secondary: ${secondaryAudioPath}`
-      // );
+  // private async concatenateReferenceAudios(
+  //   primaryAudioPath: string,
+  //   secondaryAudioPath: string = "fallback_reference.wav",
+  //   minSeconds: number = 30 // Updated from 10 to 30 seconds minimum
+  // ): Promise<string> {
+  //   try {
+  //     // console.log(
+  //     //   `[ZyphraTTS] Concatenating reference audios. Primary: ${primaryAudioPath}, Secondary: ${secondaryAudioPath}`
+  //     // );
 
-      const primaryDuration = await this.fileProcessor.getAudioDuration(
-        primaryAudioPath
-      );
-      // console.log(`[ZyphraTTS] Primary audio duration: ${primaryDuration}s`);
+  //     const primaryDuration = await this.fileProcessor.getAudioDuration(
+  //       primaryAudioPath
+  //     );
+  //     // console.log(`[ZyphraTTS] Primary audio duration: ${primaryDuration}s`);
 
-      if (primaryDuration >= minSeconds) {
-        // console.log(
-        //   `[ZyphraTTS] Primary audio is long enough (${primaryDuration}s >= ${minSeconds}s). Using it directly.`
-        // );
-        return readFileSync(primaryAudioPath).toString("base64");
-      }
+  //     if (primaryDuration >= minSeconds) {
+  //       // console.log(
+  //       //   `[ZyphraTTS] Primary audio is long enough (${primaryDuration}s >= ${minSeconds}s). Using it directly.`
+  //       // );
+  //       return readFileSync(primaryAudioPath).toString("base64");
+  //     }
 
-      const tempPath = await this.fileProcessor.createTempPath(
-        "combined_reference",
-        "wav"
-      );
-      // console.log(
-      //   `[ZyphraTTS] Created temp path for combined reference: ${tempPath}`
-      // );
+  //     const tempPath = await this.fileProcessor.createTempPath(
+  //       "combined_reference",
+  //       "wav"
+  //     );
+  //     // console.log(
+  //     //   `[ZyphraTTS] Created temp path for combined reference: ${tempPath}`
+  //     // );
 
-      // Check if we need to loop the primary audio to reach minimum duration
-      if (primaryDuration > 0 && primaryDuration < minSeconds) {
-        const loopCount = Math.ceil(minSeconds / primaryDuration);
-        // console.log(
-        //   `[ZyphraTTS] Looping primary audio ${loopCount} times to reach minimum duration`
-        // );
+  //     // Check if we need to loop the primary audio to reach minimum duration
+  //     if (primaryDuration > 0 && primaryDuration < minSeconds) {
+  //       const loopCount = Math.ceil(minSeconds / primaryDuration);
+  //       // console.log(
+  //       //   `[ZyphraTTS] Looping primary audio ${loopCount} times to reach minimum duration`
+  //       // );
 
-        // Create a filter complex to loop the primary audio
-        const loopFilter = `[0:a]aloop=loop=${loopCount - 1}:size=2e+09[out]`;
+  //       // Create a filter complex to loop the primary audio
+  //       const loopFilter = `[0:a]aloop=loop=${loopCount - 1}:size=2e+09[out]`;
 
-        // Apply enhanced audio processing to the looped audio
-        const ffmpegCmd = `ffmpeg -i "${primaryAudioPath}" \
-          -filter_complex "${loopFilter}" \
-          -map "[out]" -af "highpass=f=80,lowpass=f=12000,afftdn=nf=-30:nt=w,acompressor=threshold=0.05:ratio=4:attack=200:release=1000,adeclick=t=1:b=5,aresample=44100,loudnorm=I=-16:TP=-1.5:LRA=11" \
-          "${tempPath}"`;
+  //       // Apply enhanced audio processing to the looped audio
+  //       const ffmpegCmd = `ffmpeg -i "${primaryAudioPath}" \
+  //         -filter_complex "${loopFilter}" \
+  //         -map "[out]" -af "highpass=f=80,lowpass=f=12000,afftdn=nf=-30:nt=w,acompressor=threshold=0.05:ratio=4:attack=200:release=1000,adeclick=t=1:b=5,aresample=44100,loudnorm=I=-16:TP=-1.5:LRA=11" \
+  //         "${tempPath}"`;
 
-        // console.log(`[ZyphraTTS] Executing FFmpeg loop command: ${ffmpegCmd}`);
-        await execAsync(ffmpegCmd);
-      } else {
-        // Concatenate two different audio files with enhanced processing
-        const ffmpegCmd = `ffmpeg -i "${primaryAudioPath}" -i "${secondaryAudioPath}" \
-          -filter_complex "[0:a][1:a]concat=n=2:v=0:a=1[concat];[concat]highpass=f=80,lowpass=f=12000,afftdn=nf=-30:nt=w,acompressor=threshold=0.05:ratio=4:attack=200:release=1000,adeclick=t=1:b=5,aresample=44100,loudnorm=I=-16:TP=-1.5:LRA=11[out]" \
-          -map "[out]" "${tempPath}"`;
+  //       // console.log(`[ZyphraTTS] Executing FFmpeg loop command: ${ffmpegCmd}`);
+  //       await execAsync(ffmpegCmd);
+  //     } else {
+  //       // Concatenate two different audio files with enhanced processing
+  //       const ffmpegCmd = `ffmpeg -i "${primaryAudioPath}" -i "${secondaryAudioPath}" \
+  //         -filter_complex "[0:a][1:a]concat=n=2:v=0:a=1[concat];[concat]highpass=f=80,lowpass=f=12000,afftdn=nf=-30:nt=w,acompressor=threshold=0.05:ratio=4:attack=200:release=1000,adeclick=t=1:b=5,aresample=44100,loudnorm=I=-16:TP=-1.5:LRA=11[out]" \
+  //         -map "[out]" "${tempPath}"`;
 
-        // console.log(
-        //   `[ZyphraTTS] Executing FFmpeg concatenation command: ${ffmpegCmd}`
-        // );
-        await execAsync(ffmpegCmd);
-      }
+  //       // console.log(
+  //       //   `[ZyphraTTS] Executing FFmpeg concatenation command: ${ffmpegCmd}`
+  //       // );
+  //       await execAsync(ffmpegCmd);
+  //     }
 
-      // console.log(`[ZyphraTTS] FFmpeg processing completed successfully`);
-      await this.fileProcessor.verifyFile(tempPath);
+  //     // console.log(`[ZyphraTTS] FFmpeg processing completed successfully`);
+  //     await this.fileProcessor.verifyFile(tempPath);
 
-      // Get the final duration to verify
-      const finalDuration = await this.fileProcessor.getAudioDuration(tempPath);
-      // console.log(
-      //   `[ZyphraTTS] Final reference audio duration: ${finalDuration}s`
-      // );
+  //     // Get the final duration to verify
+  //     const finalDuration = await this.fileProcessor.getAudioDuration(tempPath);
+  //     // console.log(
+  //     //   `[ZyphraTTS] Final reference audio duration: ${finalDuration}s`
+  //     // );
 
-      return readFileSync(tempPath).toString("base64");
-    } catch (error) {
-      console.error(
-        "[ZyphraTTS] Failed to concatenate reference audios:",
-        error
-      );
-      throw error;
-    }
-  }
+  //     return readFileSync(tempPath).toString("base64");
+  //   } catch (error) {
+  //     console.error(
+  //       "[ZyphraTTS] Failed to concatenate reference audios:",
+  //       error
+  //     );
+  //     throw error;
+  //   }
+  // }
 
   async getZyphraClient(): Promise<ZyphraClient> {
     // console.log("[ZyphraTTS] Getting Zyphra client");
@@ -344,12 +344,6 @@ export class ZyphraTTS {
           );
         }
       }
-
-      const speaking_rate = calculateSpeakingRate({
-        translatedText: textToSpeech,
-        start,
-        end,
-      });
 
       const baseParams: TTSParams = {
         text: textToSpeech,
@@ -678,113 +672,5 @@ export class ZyphraTTS {
     //   `[ZyphraTTS] All TTS requests processed successfully (total: ${results.length})`
     // );
     return results;
-  }
-
-  /**
-   * Adjusts the duration of a TTS-generated audio file to match the original segment duration
-   * using a hybrid approach: time stretching for small differences and silence padding for larger ones
-   * @param audioPath Path to the TTS-generated audio file
-   * @param startTime Original segment start time in seconds
-   * @param endTime Original segment end time in seconds
-   * @returns Path to the duration-adjusted audio file
-   */
-  private async adjustAudioDuration(
-    audioPath: string,
-    startTime: number,
-    endTime: number
-  ): Promise<string> {
-    try {
-      // Calculate the target duration from the original segment
-      const targetDuration = endTime - startTime;
-
-      // Get the current duration of the TTS audio
-      const currentDuration = await this.fileProcessor.getAudioDuration(
-        audioPath
-      );
-
-      // console.log(
-      //   `[ZyphraTTS] Adjusting audio duration: Current=${currentDuration.toFixed(
-      //     2
-      //   )}s, Target=${targetDuration.toFixed(2)}s`
-      // );
-
-      // If durations are already very close (within 0.1s), no adjustment needed
-      if (Math.abs(currentDuration - targetDuration) < 0.1) {
-        // console.log(
-        //   `[ZyphraTTS] Audio duration already matches target (difference < 0.1s)`
-        // );
-        return audioPath;
-      }
-
-      // Calculate the duration ratio
-      const durationRatio = targetDuration / currentDuration;
-
-      // Create a new file path for the adjusted audio
-      const adjustedPath = await this.fileProcessor.createTempPath(
-        "adjusted_tts",
-        "wav"
-      );
-
-      // HYBRID APPROACH:
-      // 1. Use time stretching for small duration differences (within 30%)
-      // 2. Use silence padding or trimming for larger differences
-
-      if (durationRatio >= 0.7 && durationRatio <= 1.3) {
-        // Small difference: Use time stretching with ATEMPO filter
-        // ATEMPO has a range limitation of 0.5 to 2.0, but we're only using 0.7 to 1.3
-        // console.log(
-        //   `[ZyphraTTS] Using time stretching with ratio: ${durationRatio.toFixed(
-        //     2
-        //   )}`
-        // );
-
-        await execAsync(
-          `ffmpeg -i "${audioPath}" -filter:a "atempo=${durationRatio}" -c:a pcm_s16le "${adjustedPath}"`
-        );
-      } else {
-        // Large difference: Use silence padding or trimming
-        if (durationRatio > 1) {
-          // Need to extend: Add silence to the end
-          const silenceDuration = targetDuration - currentDuration;
-          // console.log(
-          //   `[ZyphraTTS] Adding ${silenceDuration.toFixed(
-          //     2
-          //   )}s of silence padding`
-          // );
-
-          await execAsync(
-            `ffmpeg -i "${audioPath}" -af "apad=pad_dur=${silenceDuration}" -c:a pcm_s16le "${adjustedPath}"`
-          );
-        } else {
-          // Need to trim: Keep as much of the speech as possible
-          // console.log(
-          //   `[ZyphraTTS] Trimming audio to ${targetDuration.toFixed(2)}s`
-          // );
-
-          await execAsync(
-            `ffmpeg -i "${audioPath}" -t ${targetDuration} -c:a pcm_s16le "${adjustedPath}"`
-          );
-        }
-      }
-
-      // Verify the adjusted file
-      await this.fileProcessor.verifyFile(adjustedPath);
-
-      // Get and log the final duration to verify adjustment
-      const finalDuration = await this.fileProcessor.getAudioDuration(
-        adjustedPath
-      );
-      // console.log(
-      //   `[ZyphraTTS] Audio duration adjustment complete: Final=${finalDuration.toFixed(
-      //     2
-      //   )}s (Target=${targetDuration.toFixed(2)}s)`
-      // );
-
-      return adjustedPath;
-    } catch (error) {
-      console.error(`[ZyphraTTS] Error adjusting audio duration:`, error);
-      // Return the original file if adjustment fails
-      return audioPath;
-    }
   }
 }

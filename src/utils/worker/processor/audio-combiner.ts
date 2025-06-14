@@ -10,13 +10,14 @@ const execAsync = promisify(exec);
 
 interface SpeechSegment {
   path: string;
-  start: number;
-  end: number;
+  start: number; // in milliseconds
+  end: number; // in milliseconds
   originalIndex: number;
-  adjustedStart?: number;
-  adjustedEnd?: number;
+  adjustedStart?: number; // in milliseconds
+  adjustedEnd?: number; // in milliseconds
 }
 
+// Assuming these interfaces are defined elsewhere
 interface VoiceActivitySegment {
   start: number;
   end: number;
@@ -31,6 +32,10 @@ export class AudioCombiner {
     this.fileProcessor = fileProcessor;
     this.audioAnalyzer = audioAnalyzer;
   }
+  /**
+   * Combines multiple speech segments over a background audio track.
+   * This revised method uses a single, robust filter_complex command.
+   */
 
   async combineAudioFiles(
     backgroundPath: string,
@@ -39,18 +44,14 @@ export class AudioCombiner {
   ): Promise<string> {
     try {
       if (!backgroundPath || !speechPaths.length) {
-        throw new Error("Missing required audio files for combination");
+        throw new Error("Missing background or speech audio files.");
       }
 
-      // Create a temporary directory for the combined audio segments
       const outputDir = await this.fileProcessor.createTempDir(
-        "combined_segments"
-      );
+        "combined_audio"
+      ); // 1. Process and prepare all speech segments
 
-      // Process each speech segment and prepare filter complex
-      let speechSegmentPaths: SpeechSegment[] = [];
-
-      // First, create processed speech segments with consistent quality
+      let speechSegments: SpeechSegment[] = [];
       for (let i = 0; i < speechPaths.length; i++) {
         const segment = transcript[i];
         if (
@@ -58,106 +59,67 @@ export class AudioCombiner {
           segment.start === undefined ||
           segment.end === undefined
         ) {
-          console.warn(`Missing transcript data for segment ${i}, skipping`);
+          console.warn(`Skipping segment ${i} due to missing transcript data.`);
           continue;
         }
-
-        // Process each speech file to ensure consistent quality
         const processedSpeechPath = await this.processSpeechForConsistency(
           speechPaths[i],
           outputDir,
           i
         );
-
-        speechSegmentPaths.push({
+        speechSegments.push({
           path: processedSpeechPath,
           start: segment.start,
           end: segment.end,
           originalIndex: i,
         });
-      }
+      } // Sort by start time to ensure logical processing
 
-      // Sort speech segments by start time and resolve overlaps
-      speechSegmentPaths.sort((a, b) => a.start - b.start);
+      speechSegments.sort((a, b) => a.start - b.start); // Adjust timing via external script (your existing logic)
 
-      // Adjust speech timing to fit within allocated time slots
-      // console.log("Adjusting speech timing to fit duration slots...");
-      speechSegmentPaths = await this.adjustSpeechTiming(speechSegmentPaths);
+      speechSegments = await this.adjustSpeechTiming(speechSegments); // 2. Construct the FFMPEG command // The background track will be the first input [0:a]
 
-      // Log the processed segments
-      console.log("Speech segments timing debug:");
-      speechSegmentPaths.forEach((segment, index) => {
-        console.log(`Segment ${index}:`, {
-          originalIndex: segment.originalIndex,
-          start: segment.start,
-          end: segment.end,
-          adjustedStart: segment.adjustedStart,
-          adjustedEnd: segment.adjustedEnd,
-          duration:
-            (segment.adjustedEnd || segment.end) -
-            (segment.adjustedStart || segment.start),
-        });
+      let inputArgs = `-i "${backgroundPath}" `; // Add each speech segment as a subsequent input
+      speechSegments.forEach((segment) => {
+        inputArgs += `-i "${segment.path}" `;
       });
 
-      // Now build a filter complex to precisely position each speech segment
-      let filterComplex = "";
+      let filterComplexParts: string[] = [];
+      let finalMixInputs = "[0:a]"; // Start with the background track // For each speech input, create a delayed stream
 
-      // Add each speech input to filter with proper delay based on adjusted start time
-      for (let i = 0; i < speechSegmentPaths.length; i++) {
-        const segment = speechSegmentPaths[i];
-        const inputIndex = i; // Start from 0 since no silent background
-        const startTime = segment.adjustedStart || segment.start;
+      speechSegments.forEach((segment, index) => {
+        // The first speech segment corresponds to input [1:a], second to [2:a], etc.
+        const inputIndex = index + 1;
+        const startTimeMs = Math.round(segment.adjustedStart ?? segment.start);
 
-        // Add each speech input to filter - with volume already boosted and positioned by timestamp
-        filterComplex += `[${inputIndex}:a]adelay=${Math.round(
-          startTime
-        )}|${Math.round(startTime)}[speech${i}];`;
-      }
+        // adelay filter requires delays per-channel in milliseconds.
+        const delay = `${startTimeMs}|${startTimeMs}`;
 
-      // Build mix chain for speech segments
-      if (speechSegmentPaths.length > 0) {
-        for (let i = 0; i < speechSegmentPaths.length; i++) {
-          filterComplex += `[speech${i}]`;
-        }
-        // Mix all speech segments
-        filterComplex += `amix=inputs=${speechSegmentPaths.length}:duration=first[speechmix];`;
-      }
+        // Create a delayed audio stream and label it e.g., [s0], [s1]
+        filterComplexParts.push(`[${inputIndex}:a]adelay=${delay}[s${index}]`);
+        finalMixInputs += `[s${index}]`;
+      }); // 3. Create the final 'amix' filter to combine everything
 
-      // Keep background at original volume (1.0 = 100%)
-      filterComplex += `[${speechSegmentPaths.length}:a]volume=1.0[bg];`;
+      // This single amix combines the background ([0:a]) and all delayed speech streams ([s0], [s1]...)
+      // - duration=longest: The output will last as long as the longest input (typically the background music).
+      // - dropout_transition=0: Prevents volume changes when streams end.
+      const totalInputs = speechSegments.length + 1;
+      filterComplexParts.push(
+        `${finalMixInputs}amix=inputs=${totalInputs}:duration=longest:dropout_transition=0[out]`
+      );
+      const filterComplex = filterComplexParts.join(";");
 
-      // Final mix of speech and background - with equal weights
-      filterComplex += `[speechmix][bg]amix=inputs=2:duration=first:weights=0.5 0.5[out]`;
-
-      // Create input arguments string for ffmpeg
-      let inputArgs = `-threads 2 `;
-
-      // Add all processed speech segments IN THE SORTED ORDER
-      for (let i = 0; i < speechSegmentPaths.length; i++) {
-        inputArgs += `-i "${speechSegmentPaths[i].path}" `;
-      }
-
-      // Add background track
-      inputArgs += `-i "${backgroundPath}" `;
-
-      // Final output path
       const finalPath = await this.fileProcessor.createTempPath(
         "final_audio",
         "wav"
       );
 
-      // Execute ffmpeg with single filter complex
-      await execAsync(
-        `ffmpeg ${inputArgs} -filter_complex "${filterComplex.replace(
-          /\s+/g,
-          " "
-        )}" -map "[out]" -c:a pcm_s24le "${finalPath}"`
-      );
+      const ffmpegCommand = `ffmpeg ${inputArgs.trim()} -filter_complex "${filterComplex}" -map "[out]" -c:a pcm_s24le "${finalPath}"`;
 
-      // Verify the output file
-      await this.fileProcessor.verifyFile(finalPath);
+      console.log("Executing FFMPEG Command:", ffmpegCommand);
+      await execAsync(ffmpegCommand);
 
-      // Apply final processing
+      await this.fileProcessor.verifyFile(finalPath); // Your final processing step remains the same
       const processedPath = await this.applyConsistentFinalProcessing(
         finalPath
       );
@@ -168,187 +130,40 @@ export class AudioCombiner {
       throw error;
     }
   }
-
   /**
-   * Detect voice activity in audio using FFmpeg's silencedetect filter
-   * Returns segments where voice/speech is detected
+   * Adjusts speech timing. The logic here depends on your Python script.
+   * IMPORTANT: Ensure your start/end times in the transcript are in MILLISECONDS.
    */
-  private async detectVoiceActivity(
-    audioPath: string
-  ): Promise<VoiceActivitySegment[]> {
-    try {
-      console.log("Running voice activity detection...");
 
-      // Use silencedetect to find non-silent segments (which likely contain speech)
-      // Detect silence with threshold -30dB and minimum duration of 0.5s
-      const { stderr } = await execAsync(
-        `ffmpeg -i "${audioPath}" -af silencedetect=noise=-30dB:duration=0.5 -f null - 2>&1`
-      );
-
-      const voiceSegments: VoiceActivitySegment[] = [];
-      const silenceRegex = /silence_(?:start|end): ([\d.]+)/g;
-      const matches = [...stderr.matchAll(silenceRegex)];
-
-      let currentStart = 0;
-      let isInSilence = false;
-
-      for (const match of matches) {
-        const timestamp = parseFloat(match[1]);
-        const isSilenceStart = match[0].includes("silence_start");
-
-        if (isSilenceStart && !isInSilence) {
-          // End of voice segment
-          if (timestamp > currentStart) {
-            voiceSegments.push({
-              start: currentStart,
-              end: timestamp,
-              confidence: 0.8, // Basic confidence score
-            });
-          }
-          isInSilence = true;
-        } else if (!isSilenceStart && isInSilence) {
-          // Start of new voice segment
-          currentStart = timestamp;
-          isInSilence = false;
-        }
-      }
-
-      // Handle case where audio ends with voice
-      if (!isInSilence) {
-        // Get audio duration for final segment
-        const { stdout } = await execAsync(
-          `ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${audioPath}"`
-        );
-        const duration = parseFloat(stdout.trim());
-
-        voiceSegments.push({
-          start: currentStart,
-          end: duration,
-          confidence: 0.8,
-        });
-      }
-
-      console.log(
-        `Detected ${voiceSegments.length} voice activity segments:`,
-        voiceSegments.map((s) => `${s.start.toFixed(2)}s-${s.end.toFixed(2)}s`)
-      );
-
-      return voiceSegments;
-    } catch (error) {
-      console.error("Error detecting voice activity:", error);
-      return []; // Return empty array if detection fails
-    }
-  }
-
-  private async separateOriginalAudio(
-    originalAudioUrl: string
-    // transcript: Transcript[]
-  ): Promise<string> {
-    const originalPath = await this.fileProcessor.downloadAndConvertAudio(
-      originalAudioUrl
-    );
-    const spleeterOutputDir = await this.fileProcessor.createTempDir(
-      "spleeter_output"
-    );
-
-    try {
-      const scriptPath = path.resolve("./src/script/separate_audio.py");
-      await execAsync(
-        `python3 "${scriptPath}" "${originalPath}" "${spleeterOutputDir}"`
-      );
-
-      const subdirs = await fs.readdir(spleeterOutputDir);
-      if (!subdirs.length) {
-        throw new Error("No subdirectories found in Spleeter output.");
-      }
-
-      // Get vocals for voice cloning
-      const vocalsPath = path.join(spleeterOutputDir, subdirs[0], "vocals.wav");
-      await this.fileProcessor.verifyFile(vocalsPath);
-
-      // Get accompaniment for background
-      const accompanimentPath = path.join(
-        spleeterOutputDir,
-        subdirs[0],
-        "accompaniment.wav"
-      );
-      await this.fileProcessor.verifyFile(accompanimentPath);
-
-      // Extract speaker references using transcript timestamps
-      // await this.speakerReferenceProcessor.extractSpeakerReferences(
-      //   vocalsPath,
-      //   transcript
-      // );
-
-      return accompanimentPath;
-    } catch (error) {
-      console.error("Spleeter processing failed:", error);
-      throw new Error(`Spleeter processing failed: ${error}`);
-    }
-  }
-
-  /**
-   * Remove speech segments from background audio by replacing them with ambient noise or silence
-   */
-  private async removeSpeechFromBackground(
-    backgroundPath: string
-  ): Promise<string> {
-    try {
-      return backgroundPath;
-    } catch (error) {
-      console.error("Error removing speech from background:", error);
-      console.log("Falling back to original background audio");
-      return backgroundPath; // Fallback to original if processing fails
-    }
-  }
-
-  /**
-   * Adjust speech segments to fit within their allocated time slots using Python script
-   */
   private async adjustSpeechTiming(
     segments: SpeechSegment[]
   ): Promise<SpeechSegment[]> {
     const adjustedSegments: SpeechSegment[] = [];
-
     for (const segment of segments) {
       try {
-        // If your segment.start and segment.end are in milliseconds
-        const targetDurationMs = segment.end - segment.start; // milliseconds
-        const targetDurationSec = targetDurationMs; // convert to seconds
+        const targetDurationMs = segment.end - segment.start; // The Python script seems to expect duration in seconds
+        const targetDurationSec = targetDurationMs / 1000.0;
 
-        console.log("duration in miliseconde:", targetDurationMs);
-
-        console.log("duration is :", targetDurationSec);
-
-        console.log(
-          `Processing segment ${
-            segment.originalIndex
-          } - target duration: ${targetDurationSec.toFixed(3)}s`
-        );
-
-        // Create output path for tempo-adjusted audio
         const adjustedPath = await this.fileProcessor.createTempPath(
           `tempo_adjusted_${segment.originalIndex}`,
           "wav"
         );
-
-        // Use Python script to adjust tempo
         const scriptPath = path.resolve("./src/script/adjust_speech_timing.py");
 
         const { stdout, stderr } = await execAsync(
           `python "${scriptPath}" "${segment.path}" ${targetDurationSec} "${adjustedPath}"`
         );
 
-        // Log Python script output
-        if (stdout) {
-          console.log(`Segment ${segment.originalIndex} processing:`, stdout);
-        }
-
-        if (stderr) {
-          console.warn(`Segment ${segment.originalIndex} warnings:`, stderr);
-        }
-
-        // Verify the adjusted file exists
+        if (stdout)
+          console.log(
+            `Python script stdout for segment ${segment.originalIndex}:`,
+            stdout
+          );
+        if (stderr)
+          console.warn(
+            `Python script stderr for segment ${segment.originalIndex}:`,
+            stderr
+          );
         await this.fileProcessor.verifyFile(adjustedPath);
 
         adjustedSegments.push({
@@ -359,19 +174,12 @@ export class AudioCombiner {
         });
       } catch (error) {
         console.error(
-          `Error processing segment ${segment.originalIndex}:`,
+          `Failed to adjust timing for segment ${segment.originalIndex}, using original.`,
           error
         );
-
-        // Keep original segment if processing fails
-        adjustedSegments.push({
-          ...segment,
-          adjustedStart: segment.start,
-          adjustedEnd: segment.end,
-        });
+        adjustedSegments.push({ ...segment }); // Fallback to original
       }
     }
-
     return adjustedSegments;
   }
 
@@ -381,21 +189,15 @@ export class AudioCombiner {
     index: number
   ): Promise<string> {
     try {
-      console.log(`Processing speech file ${index} (boosting volume)...`);
-
-      // Create a processed speech file path
       const processedPath = path.join(
         outputDir,
         `processed_speech_${index}.wav`
       );
-
+      // Using 'volume=2.0' (a 6dB gain) is a safer starting point than 3.0
       await execAsync(
-        `ffmpeg -i "${speechPath}" -af "volume=3.0" "${processedPath}"`
+        `ffmpeg -i "${speechPath}" -af "volume=2.0" "${processedPath}"`
       );
-
-      // Verify the output file
       await this.fileProcessor.verifyFile(processedPath);
-
       return processedPath;
     } catch (error) {
       console.error(`Error processing speech file ${index}:`, error);
@@ -406,15 +208,7 @@ export class AudioCombiner {
   private async applyConsistentFinalProcessing(
     inputPath: string
   ): Promise<string> {
-    try {
-      console.log(
-        "Applying final processing with speech clarity enhancement..."
-      );
-
-      return inputPath;
-    } catch (error) {
-      console.error("Error applying final processing:", error);
-      throw error;
-    }
+    // Placeholder for any final mastering (e.g., loudnorm, compression)
+    return inputPath;
   }
 }
