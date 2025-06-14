@@ -429,134 +429,100 @@ export class AudioCombiner {
     segments: SpeechSegment[]
   ): Promise<SpeechSegment[]> {
     const adjustedSegments: SpeechSegment[] = [];
-
+  
     for (const segment of segments) {
       try {
-        // Calculate required duration (target time slot)
         const targetDuration = segment.end - segment.start;
-        
-        // Get actual duration of the TTS audio file
+  
+        // Get actual duration from ffprobe
         const { stdout } = await execAsync(
           `ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${segment.path}"`
         );
         const actualDuration = parseFloat(stdout.trim());
-
+  
         if (isNaN(actualDuration) || actualDuration <= 0) {
           console.warn(`Invalid duration for segment ${segment.originalIndex}, skipping`);
           continue;
         }
-
-        // Calculate required tempo adjustment
-        const requiredTempo = actualDuration / targetDuration;
-        
-        console.log(`Segment ${segment.originalIndex}: actual=${actualDuration.toFixed(3)}s, target=${targetDuration.toFixed(3)}s, tempo=${requiredTempo.toFixed(3)}`);
-
-        // Only adjust if tempo is significantly different (> 5% difference)
+  
+        // ✅ Corrected tempo calculation
+        const requiredTempo = targetDuration / actualDuration;
+  
+        console.log(
+          `Segment ${segment.originalIndex}: actual=${actualDuration.toFixed(3)}s, target=${targetDuration.toFixed(3)}s, tempo=${requiredTempo.toFixed(3)}`
+        );
+  
+        // Only adjust if tempo difference is >5%
         if (Math.abs(requiredTempo - 1.0) > 0.05) {
-          // Clamp tempo to valid range [0.5, 100.0]
           const clampedTempo = Math.max(0.5, Math.min(100.0, requiredTempo));
-          
+  
           if (clampedTempo !== requiredTempo) {
-            console.warn(`Tempo ${requiredTempo.toFixed(3)} clamped to ${clampedTempo.toFixed(3)} for segment ${segment.originalIndex}`);
+            console.warn(
+              `Tempo ${requiredTempo.toFixed(3)} clamped to ${clampedTempo.toFixed(3)} for segment ${segment.originalIndex}`
+            );
           }
-
-          // Adjust the speech file using atempo filter
+  
           const adjustedPath = await this.applySpeechTempoAdjustment(
             segment.path,
             clampedTempo,
             segment.originalIndex
           );
-
+  
           adjustedSegments.push({
             ...segment,
             path: adjustedPath,
-            // Keep original timing since audio now fits the duration
             adjustedStart: segment.start,
-            adjustedEnd: segment.end
+            adjustedEnd: segment.end,
           });
         } else {
-          // No significant adjustment needed
           adjustedSegments.push({
             ...segment,
             adjustedStart: segment.start,
-            adjustedEnd: segment.end
+            adjustedEnd: segment.end,
           });
         }
       } catch (error) {
         console.error(`Error processing segment ${segment.originalIndex}:`, error);
-        // Keep original segment if processing fails
         adjustedSegments.push({
           ...segment,
           adjustedStart: segment.start,
-          adjustedEnd: segment.end
+          adjustedEnd: segment.end,
         });
       }
     }
-
+  
     return adjustedSegments;
   }
-
-  /**
-   * Apply tempo adjustment to speech audio using atempo filter
-   */
+  
   private async applySpeechTempoAdjustment(
     inputPath: string,
     tempo: number,
     segmentIndex: number
   ): Promise<string> {
-    try {
-      const adjustedPath = await this.fileProcessor.createTempPath(
-        `tempo_adjusted_${segmentIndex}`,
-        "wav"
-      );
-
-      // Build atempo filter chain for tempo values > 2.0
-      let atempoFilter = "";
-      
-      if (tempo <= 2.0) {
-        // Single atempo filter for values <= 2.0
-        atempoFilter = `atempo=${tempo.toFixed(6)}`;
-      } else {
-        // Chain multiple atempo filters for values > 2.0
-        // Calculate how many filters we need and their individual values
-        let remainingTempo = tempo;
-        const atempoFilters: string[] = [];
-        
-        while (remainingTempo > 2.0) {
-          const currentTempo = Math.min(2.0, Math.sqrt(remainingTempo));
-          atempoFilters.push(`atempo=${currentTempo.toFixed(6)}`);
-          remainingTempo /= currentTempo;
-        }
-        
-        // Add final filter for remaining tempo
-        if (remainingTempo > 1.0001) { // Small threshold to avoid unnecessary filter
-          atempoFilters.push(`atempo=${remainingTempo.toFixed(6)}`);
-        }
-        
-        atempoFilter = atempoFilters.join(',');
-        console.log(`Using chained atempo filters for tempo ${tempo}: ${atempoFilter}`);
+    const outputPath = inputPath.replace(/\.wav$/, `_tempo${segmentIndex}.wav`);
+  
+    // Handle daisy-chaining for tempo > 2.0 or < 0.5
+    const buildAtempoChain = (value: number): string => {
+      const chain: number[] = [];
+      while (value > 2.0) {
+        chain.push(2.0);
+        value /= 2.0;
       }
-
-      // Apply tempo adjustment
-      await execAsync(
-        `ffmpeg -i "${inputPath}" -af "${atempoFilter}" -c:a pcm_s24le "${adjustedPath}"`
-      );
-
-      // Verify the output file
-      await this.fileProcessor.verifyFile(adjustedPath);
-
-      // Log the actual duration after adjustment
-      const { stdout } = await execAsync(
-        `ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${adjustedPath}"`
-      );
-      const newDuration = parseFloat(stdout.trim());
-      console.log(`Segment ${segmentIndex} adjusted from tempo to ${newDuration.toFixed(3)}s duration`);
-
-      return adjustedPath;
-    } catch (error) {
-      console.error(`Error applying tempo adjustment to segment ${segmentIndex}:`, error);
-      throw error;
-    }
+      while (value < 0.5) {
+        chain.push(0.5);
+        value /= 0.5;
+      }
+      chain.push(value);
+      return chain.map(t => `atempo=${t.toFixed(5)}`).join(',');
+    };
+  
+    const atempoFilter = buildAtempoChain(tempo);
+  
+    await execAsync(
+      `ffmpeg -y -i "${inputPath}" -filter:a "${atempoFilter}" "${outputPath}"`
+    );
+  
+    return outputPath;
   }
 
   private async processSpeechForConsistency(
