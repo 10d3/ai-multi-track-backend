@@ -304,83 +304,83 @@ export class AudioCombiner {
   private async adjustSpeechTiming(
     segments: SpeechSegment[]
   ): Promise<SpeechSegment[]> {
-    const adjustedSegments: SpeechSegment[] = [];
+    // const adjustedSegments: SpeechSegment[] = [];
 
-    for (const segment of segments) {
-      try {
-        const targetDuration = segment.end - segment.start;
+    // for (const segment of segments) {
+    //   try {
+    //     const targetDuration = segment.end - segment.start;
 
-        // Get actual duration from ffprobe
-        const { stdout } = await execAsync(
-          `ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${segment.path}"`
-        );
-        const actualDuration = parseFloat(stdout.trim());
+    //     // Get actual duration from ffprobe
+    //     const { stdout } = await execAsync(
+    //       `ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${segment.path}"`
+    //     );
+    //     const actualDuration = parseFloat(stdout.trim());
 
-        if (isNaN(actualDuration) || actualDuration <= 0) {
-          console.warn(
-            `Invalid duration for segment ${segment.originalIndex}, skipping`
-          );
-          continue;
-        }
+    //     if (isNaN(actualDuration) || actualDuration <= 0) {
+    //       console.warn(
+    //         `Invalid duration for segment ${segment.originalIndex}, skipping`
+    //       );
+    //       continue;
+    //     }
 
-        // ✅ Corrected tempo calculation
-        const requiredTempo = actualDuration / targetDuration;
+    //     // ✅ Corrected tempo calculation
+    //     const requiredTempo = actualDuration / targetDuration;
 
-        console.log(
-          `Segment ${segment.originalIndex}: actual=${actualDuration.toFixed(
-            3
-          )}s, target=${targetDuration.toFixed(
-            3
-          )}s, tempo=${requiredTempo.toFixed(3)}`
-        );
+    //     console.log(
+    //       `Segment ${segment.originalIndex}: actual=${actualDuration.toFixed(
+    //         3
+    //       )}s, target=${targetDuration.toFixed(
+    //         3
+    //       )}s, tempo=${requiredTempo.toFixed(3)}`
+    //     );
 
-        // Only adjust if tempo difference is >5%
-        if (Math.abs(requiredTempo - 1.0) > 0.05) {
-          const clampedTempo = Math.max(0.5, Math.min(100.0, requiredTempo));
+    //     // Only adjust if tempo difference is >5%
+    //     if (Math.abs(requiredTempo - 1.0) > 0.05) {
+    //       const clampedTempo = Math.max(0.5, Math.min(100.0, requiredTempo));
 
-          if (clampedTempo !== requiredTempo) {
-            console.warn(
-              `Tempo ${requiredTempo.toFixed(
-                3
-              )} clamped to ${clampedTempo.toFixed(3)} for segment ${
-                segment.originalIndex
-              }`
-            );
-          }
+    //       if (clampedTempo !== requiredTempo) {
+    //         console.warn(
+    //           `Tempo ${requiredTempo.toFixed(
+    //             3
+    //           )} clamped to ${clampedTempo.toFixed(3)} for segment ${
+    //             segment.originalIndex
+    //           }`
+    //         );
+    //       }
 
-          const adjustedPath = await this.applySpeechTempoAdjustment(
-            segment.path,
-            clampedTempo,
-            segment.originalIndex
-          );
+    //       const adjustedPath = await this.applySpeechTempoAdjustment(
+    //         segment.path,
+    //         clampedTempo,
+    //         segment.originalIndex
+    //       );
 
-          adjustedSegments.push({
-            ...segment,
-            path: adjustedPath,
-            adjustedStart: segment.start,
-            adjustedEnd: segment.end,
-          });
-        } else {
-          adjustedSegments.push({
-            ...segment,
-            adjustedStart: segment.start,
-            adjustedEnd: segment.end,
-          });
-        }
-      } catch (error) {
-        console.error(
-          `Error processing segment ${segment.originalIndex}:`,
-          error
-        );
-        adjustedSegments.push({
-          ...segment,
-          adjustedStart: segment.start,
-          adjustedEnd: segment.end,
-        });
-      }
-    }
+    //       adjustedSegments.push({
+    //         ...segment,
+    //         path: adjustedPath,
+    //         adjustedStart: segment.start,
+    //         adjustedEnd: segment.end,
+    //       });
+    //     } else {
+    //       adjustedSegments.push({
+    //         ...segment,
+    //         adjustedStart: segment.start,
+    //         adjustedEnd: segment.end,
+    //       });
+    //     }
+    //   } catch (error) {
+    //     console.error(
+    //       `Error processing segment ${segment.originalIndex}:`,
+    //       error
+    //     );
+    //     adjustedSegments.push({
+    //       ...segment,
+    //       adjustedStart: segment.start,
+    //       adjustedEnd: segment.end,
+    //     });
+    //   }
+    // }
 
-    return adjustedSegments;
+    return segments;
   }
 
   private async applySpeechTempoAdjustment(
