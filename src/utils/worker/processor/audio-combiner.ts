@@ -42,47 +42,9 @@ export class AudioCombiner {
         throw new Error("Missing required audio files for combination");
       }
 
-      // First analyze the background audio to get its characteristics
-      console.log("Analyzing background audio characteristics...");
-      const bgAnalysis = await this.audioAnalyzer.analyzeAudio(backgroundPath);
-
-      console.log("Background audio analysis:", {
-        duration: bgAnalysis.duration,
-        sampleRate: bgAnalysis.format.sampleRate,
-        channels: bgAnalysis.format.channels,
-        loudness: bgAnalysis.loudness.integrated,
-        truePeak: bgAnalysis.loudness.truePeak,
-      });
-
-      // Detect voice activity in background audio
-      console.log("Detecting voice activity in background audio...");
-      const voiceSegments = await this.detectVoiceActivity(backgroundPath);
-
-      // Create speech-free background audio
-      console.log("Creating speech-free background audio...");
-      const cleanBackgroundPath = await this.removeSpeechFromBackground(
-        backgroundPath,
-        voiceSegments,
-        bgAnalysis
-      );
-
       // Create a temporary directory for the combined audio segments
       const outputDir = await this.fileProcessor.createTempDir(
         "combined_segments"
-      );
-
-      // Create silent audio with EXACT same duration, sample rate and channels
-      const silentBgPath = await this.fileProcessor.createTempPath(
-        "silent_bg",
-        "wav"
-      );
-
-      await execAsync(
-        `ffmpeg -threads 2 -f lavfi -i anullsrc=r=${
-          bgAnalysis.format.sampleRate
-        }:cl=${bgAnalysis.format.channels === 1 ? "mono" : "stereo"} -t ${
-          bgAnalysis.duration
-        } -c:a pcm_s24le "${silentBgPath}"`
       );
 
       // Process each speech segment and prepare filter complex
@@ -104,8 +66,7 @@ export class AudioCombiner {
         const processedSpeechPath = await this.processSpeechForConsistency(
           speechPaths[i],
           outputDir,
-          i,
-          bgAnalysis
+          i
         );
 
         speechSegmentPaths.push({
@@ -142,7 +103,7 @@ export class AudioCombiner {
       // Add each speech input to filter with proper delay based on adjusted start time
       for (let i = 0; i < speechSegmentPaths.length; i++) {
         const segment = speechSegmentPaths[i];
-        const inputIndex = i + 1; // +1 because silent background is input 0
+        const inputIndex = i; // Start from 0 since no silent background
         const startTime = segment.adjustedStart || segment.start;
 
         // Add each speech input to filter - with volume already boosted and positioned by timestamp
@@ -151,34 +112,31 @@ export class AudioCombiner {
         )}|${Math.round(startTime * 1000)}[speech${i}];`;
       }
 
-      // Build mix chain
+      // Build mix chain for speech segments
       if (speechSegmentPaths.length > 0) {
-        filterComplex += `[0:a]`;
         for (let i = 0; i < speechSegmentPaths.length; i++) {
           filterComplex += `[speech${i}]`;
         }
-        // Mix all speech segments with silent background
-        filterComplex += `amix=inputs=${
-          speechSegmentPaths.length + 1
-        }:duration=first[speechmix];`;
+        // Mix all speech segments
+        filterComplex += `amix=inputs=${speechSegmentPaths.length}:duration=first[speechmix];`;
       }
 
       // Keep background at original volume (1.0 = 100%)
-      filterComplex += `[${speechSegmentPaths.length + 1}:a]volume=1.0[bg];`;
+      filterComplex += `[${speechSegmentPaths.length}:a]volume=1.0[bg];`;
 
       // Final mix of speech and background - with equal weights
       filterComplex += `[speechmix][bg]amix=inputs=2:duration=first:weights=0.5 0.5[out]`;
 
       // Create input arguments string for ffmpeg
-      let inputArgs = `-threads 2 -i "${silentBgPath}" `;
+      let inputArgs = `-threads 2 `;
 
       // Add all processed speech segments IN THE SORTED ORDER
       for (let i = 0; i < speechSegmentPaths.length; i++) {
         inputArgs += `-i "${speechSegmentPaths[i].path}" `;
       }
 
-      // Add clean background track (without original speech)
-      inputArgs += `-i "${cleanBackgroundPath}" `;
+      // Add background track
+      inputArgs += `-i "${backgroundPath}" `;
 
       // Final output path
       const finalPath = await this.fileProcessor.createTempPath(
@@ -186,34 +144,19 @@ export class AudioCombiner {
         "wav"
       );
 
-      // Execute ffmpeg with single filter complex that preserves exact duration
+      // Execute ffmpeg with single filter complex
       await execAsync(
         `ffmpeg ${inputArgs} -filter_complex "${filterComplex.replace(
           /\s+/g,
           " "
-        )}" -map "[out]" -c:a pcm_s24le -ar ${
-          bgAnalysis.format.sampleRate
-        } -ac ${bgAnalysis.format.channels} "${finalPath}"`
+        )}" -map "[out]" -c:a pcm_s24le "${finalPath}"`
       );
 
       // Verify the output file
       await this.fileProcessor.verifyFile(finalPath);
 
-      // Verify final length matches original background
-      const finalAnalysis = await this.audioAnalyzer.analyzeAudio(finalPath);
-      console.log("Final audio validation:", {
-        originalDuration: bgAnalysis.duration.toFixed(3) + "s",
-        finalDuration: finalAnalysis.duration.toFixed(3) + "s",
-        difference:
-          Math.abs(bgAnalysis.duration - finalAnalysis.duration).toFixed(3) +
-          "s",
-      });
-
-      // Apply final spectral matching to ensure consistent quality for all segments
-      const processedPath = await this.applyConsistentFinalProcessing(
-        finalPath,
-        bgAnalysis
-      );
+      // Apply final processing
+      const processedPath = await this.applyConsistentFinalProcessing(finalPath);
 
       return processedPath;
     } catch (error) {
@@ -344,9 +287,7 @@ export class AudioCombiner {
    * Remove speech segments from background audio by replacing them with ambient noise or silence
    */
   private async removeSpeechFromBackground(
-    backgroundPath: string,
-    voiceSegments: VoiceActivitySegment[],
-    bgAnalysis: any
+    backgroundPath: string
   ): Promise<string> {
     try {
       return backgroundPath;
@@ -476,8 +417,7 @@ export class AudioCombiner {
   private async processSpeechForConsistency(
     speechPath: string,
     outputDir: string,
-    index: number,
-    bgAnalysis: any
+    index: number
   ): Promise<string> {
     try {
       console.log(`Processing speech file ${index} (boosting volume)...`);
@@ -503,50 +443,12 @@ export class AudioCombiner {
   }
 
   private async applyConsistentFinalProcessing(
-    inputPath: string,
-    originalAnalysis: any
+    inputPath: string
   ): Promise<string> {
     try {
       console.log(
         "Applying final processing with speech clarity enhancement..."
       );
-
-      // // Create an output path
-      // const outputPath = await this.fileProcessor.createTempPath(
-      //   "final_processed",
-      //   "wav"
-      // );
-
-      // // Extract basic format parameters
-      // const channelLayout =
-      //   originalAnalysis.format.channels === 1 ? "mono" : "stereo";
-
-      // // Final processing to ensure speech clarity and consistent volume
-      // const finalFilter =
-      //   `aformat=sample_fmts=fltp:sample_rates=${originalAnalysis.format.sampleRate}:channel_layouts=${channelLayout},` +
-      //   `highpass=f=80,` + // Remove low-frequency rumble
-      //   `lowpass=f=8000,` + // Remove high-frequency noise
-      //   `compand=attacks=0.01:decays=0.2:points=-80/-80|-50/-25|-30/-15|-5/-5|0/-2:soft-knee=2:gain=3,` +
-      //   `loudnorm=I=-18:TP=-2:LRA=7`; // Final loudness normalization
-
-      // // Process the final audio with enhanced clarity
-      // await execAsync(
-      //   `ffmpeg -threads 2 -i "${inputPath}" -af "${finalFilter}" -c:a pcm_s24le -ar ${originalAnalysis.format.sampleRate} -ac ${originalAnalysis.format.channels} "${outputPath}"`
-      // );
-
-      // // Verify the output file
-      // await this.fileProcessor.verifyFile(outputPath);
-
-      // // Verify final length matches original background
-      // const finalAnalysis = await this.audioAnalyzer.analyzeAudio(outputPath);
-      // console.log("Final audio validation:", {
-      //   originalDuration: originalAnalysis.duration.toFixed(3) + "s",
-      //   finalDuration: finalAnalysis.duration.toFixed(3) + "s",
-      //   difference:
-      //     Math.abs(originalAnalysis.duration - finalAnalysis.duration).toFixed(
-      //       3
-      //     ) + "s",
-      // });
 
       return inputPath;
     } catch (error) {
