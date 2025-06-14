@@ -607,14 +607,14 @@ export class ZyphraTTS {
                 });
 
                 // Apply hybrid duration adjustment if start and end times are provided
-                if (request.start !== undefined && request.end !== undefined) {
-                  const adjustedPath = await this.adjustAudioDuration(
-                    filePath,
-                    request.start,
-                    request.end
-                  );
-                  return adjustedPath;
-                }
+                // if (request.start !== undefined && request.end !== undefined) {
+                //   const adjustedPath = await this.adjustAudioDuration(
+                //     filePath,
+                //     request.start,
+                //     request.end
+                //   );
+                //   return adjustedPath;
+                // }
 
                 return filePath;
               } catch (error) {
