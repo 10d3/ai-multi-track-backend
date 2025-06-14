@@ -48,6 +48,8 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+RUN apt-get install rubberband-cli
+
 
 # Create and activate Python virtual environment
 RUN python3 -m venv /opt/venv
