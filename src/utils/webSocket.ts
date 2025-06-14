@@ -466,7 +466,7 @@ const performCleanup = () => {
 
 // Enhanced event listeners with error handling
 eventAudioProcessing.on("completed", (jobId) => {
-  console.log(`[SSE Event] Job completed event received for job ID: ${jobId.jobId}`);
+  // console.log(`[SSE Event] Job completed event received for job ID: ${jobId.jobId}`);
   try {
     sendJobUpdate(jobId.jobId, true); // Force send for completed jobs
   } catch (error) {
@@ -475,7 +475,7 @@ eventAudioProcessing.on("completed", (jobId) => {
 });
 
 eventAudioProcessing.on("failed", (jobId) => {
-  console.log(`[SSE Event] Job failed event received for job ID: ${jobId.jobId}`);
+  // console.log(`[SSE Event] Job failed event received for job ID: ${jobId.jobId}`);
   try {
     sendJobUpdate(jobId.jobId, true); // Force send for failed jobs
   } catch (error) {
@@ -484,7 +484,7 @@ eventAudioProcessing.on("failed", (jobId) => {
 });
 
 eventAudioProcessing.on("progress", (jobId) => {
-  console.log(`[SSE Event] Job progress event received for job ID: ${jobId.jobId}`);
+  // console.log(`[SSE Event] Job progress event received for job ID: ${jobId.jobId}`);
   try {
     sendJobUpdate(jobId.jobId, false); // Allow batching for progress updates
   } catch (error) {
@@ -573,11 +573,11 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 const PORT = process.env.WEBSOCKET_PORT || 3001;
 server.listen(PORT, () => {
   console.log(`SSE server running on port ${PORT}`);
-  console.log(`Configuration:`, {
-    maxConnectionsPerIp: MAX_CONNECTIONS_PER_IP,
-    connectionTimeout: CONNECTION_TIMEOUT / 1000 + 's',
-    heartbeatInterval: HEARTBEAT_INTERVAL / 1000 + 's',
-    batchUpdateDelay: BATCH_UPDATE_DELAY / 1000 + 's',
-    cleanupInterval: CLEANUP_INTERVAL / 1000 + 's',
-  });
+  // console.log(`Configuration:`, {
+  //   maxConnectionsPerIp: MAX_CONNECTIONS_PER_IP,
+  //   connectionTimeout: CONNECTION_TIMEOUT / 1000 + 's',
+  //   heartbeatInterval: HEARTBEAT_INTERVAL / 1000 + 's',
+  //   batchUpdateDelay: BATCH_UPDATE_DELAY / 1000 + 's',
+  //   cleanupInterval: CLEANUP_INTERVAL / 1000 + 's',
+  // });
 });

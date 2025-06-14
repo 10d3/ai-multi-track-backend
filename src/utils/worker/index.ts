@@ -18,7 +18,7 @@ const worker = new Worker<JobData>(
     const audioProcessor = new AudioProcessor();
     await audioProcessor.init();
 
-    console.log("Processing job:", job.data);
+    // console.log("Processing job:", job.data);
 
     try {
       let ttsConvertedPaths = [];

@@ -33,23 +33,23 @@ export class AudioCombiner {
     this.audioAnalyzer = audioAnalyzer;
   }
   /**
-   * Gets the duration of an audio file in seconds
+   * Gets the duration of an audio file in seconds using ffprobe.
    */
+
   private async getAudioDuration(filePath: string): Promise<number> {
     try {
       const { stdout } = await execAsync(
-        `ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${filePath}"`
+        `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${filePath}"`
       );
       return parseFloat(stdout.trim());
     } catch (error) {
-      console.error("Error getting audio duration:", error);
-      throw error;
+      console.error(`Error getting audio duration for: ${filePath}`, error);
+      throw new Error("Could not determine audio duration.");
     }
   }
-
   /**
    * Combines multiple speech segments over a background audio track.
-   * This revised method uses a single, robust filter_complex command.
+   * The final output is truncated to match the background audio's duration.
    */
 
   async combineAudioFiles(
@@ -62,9 +62,10 @@ export class AudioCombiner {
         throw new Error("Missing background or speech audio files.");
       }
 
-      // Get the background audio duration first
       const backgroundDuration = await this.getAudioDuration(backgroundPath);
-      console.log(`Background audio duration: ${backgroundDuration} seconds`);
+      console.log(
+        `Background audio duration: ${backgroundDuration.toFixed(3)} seconds.`
+      );
 
       const outputDir = await this.fileProcessor.createTempDir(
         "combined_audio"
@@ -96,55 +97,43 @@ export class AudioCombiner {
 
       speechSegments.sort((a, b) => a.start - b.start); // Adjust timing via external script (your existing logic)
 
-      speechSegments = await this.adjustSpeechTiming(speechSegments); // 2. Construct the FFMPEG command // The background track will be the first input [0:a]
+      speechSegments = await this.adjustSpeechTiming(speechSegments); // 2. Construct the FFMPEG command
 
-      let inputArgs = `-i "${backgroundPath}" `; // Add each speech segment as a subsequent input
+      let inputArgs = `-i "${backgroundPath}" `;
       speechSegments.forEach((segment) => {
         inputArgs += `-i "${segment.path}" `;
       });
 
       let filterComplexParts: string[] = [];
-      let finalMixInputs = "[0:a]"; // Start with the background track // For each speech input, create a delayed stream
+      let finalMixInputs = "[0:a]"; // Start with the background track
 
       speechSegments.forEach((segment, index) => {
-        // The first speech segment corresponds to input [1:a], second to [2:a], etc.
         const inputIndex = index + 1;
         const startTimeMs = Math.round(segment.adjustedStart ?? segment.start);
-
-        // adelay filter requires delays per-channel in milliseconds.
         const delay = `${startTimeMs}|${startTimeMs}`;
-
-        // Create a delayed audio stream and label it e.g., [s0], [s1]
         filterComplexParts.push(`[${inputIndex}:a]adelay=${delay}[s${index}]`);
         finalMixInputs += `[s${index}]`;
-      }); 
+      }); // 3. Create the final 'amix' filter. // - duration=longest: Mixes until the longest input (likely a delayed speech track) ends. // The final duration will be enforced by the top-level '-t' option.
 
-      // 3. Create the final 'amix' filter to combine everything
-
-      // This single amix combines the background ([0:a]) and all delayed speech streams ([s0], [s1]...)
-      // - duration=first: The output will match the duration of the first input (background audio).
-      // - dropout_transition=0: Prevents volume changes when streams end.
       const totalInputs = speechSegments.length + 1;
       filterComplexParts.push(
-        `${finalMixInputs}amix=inputs=${totalInputs}:duration=first:dropout_transition=0[out]`
+        `${finalMixInputs}amix=inputs=${totalInputs}:duration=longest:dropout_transition=0[out]`
       );
       const filterComplex = filterComplexParts.join(";");
 
       const finalPath = await this.fileProcessor.createTempPath(
         "final_audio",
         "wav"
-      );
-
-      const ffmpegCommand = `ffmpeg ${inputArgs.trim()} -filter_complex "${filterComplex}" -map "[out]" -c:a pcm_s24le "${finalPath}"`;
+      ); // Use the top-level '-t' option to explicitly set the output duration. This is the most reliable method.
+      const ffmpegCommand = `ffmpeg -y ${inputArgs.trim()} -filter_complex "${filterComplex}" -map "[out]" -t ${backgroundDuration} -c:a pcm_s24le "${finalPath}"`;
 
       console.log("Executing FFMPEG Command:", ffmpegCommand);
       await execAsync(ffmpegCommand);
 
-      await this.fileProcessor.verifyFile(finalPath); // Your final processing step remains the same
+      await this.fileProcessor.verifyFile(finalPath);
       const processedPath = await this.applyConsistentFinalProcessing(
         finalPath
       );
-
       return processedPath;
     } catch (error) {
       console.error("Error combining audio files:", error);
@@ -153,16 +142,14 @@ export class AudioCombiner {
   }
   /**
    * Adjusts speech timing. The logic here depends on your Python script.
-   * IMPORTANT: Ensure your start/end times in the transcript are in MILLISECONDS.
    */
-
   private async adjustSpeechTiming(
     segments: SpeechSegment[]
   ): Promise<SpeechSegment[]> {
     const adjustedSegments: SpeechSegment[] = [];
     for (const segment of segments) {
       try {
-        const targetDurationMs = segment.end - segment.start; // The Python script seems to expect duration in seconds
+        const targetDurationMs = segment.end - segment.start;
         const targetDurationSec = targetDurationMs / 1000.0;
 
         const adjustedPath = await this.fileProcessor.createTempPath(
@@ -214,9 +201,8 @@ export class AudioCombiner {
         outputDir,
         `processed_speech_${index}.wav`
       );
-      // Using 'volume=2.0' (a 6dB gain) is a safer starting point than 3.0
       await execAsync(
-        `ffmpeg -i "${speechPath}" -af "volume=2.0" "${processedPath}"`
+        `ffmpeg -y -i "${speechPath}" -af "volume=2.0" "${processedPath}"`
       );
       await this.fileProcessor.verifyFile(processedPath);
       return processedPath;

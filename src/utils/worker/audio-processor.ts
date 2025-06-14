@@ -378,7 +378,7 @@ export class AudioProcessor {
     }
 
     try {
-      console.log("Starting CleanVoice audio enhancement process...");
+      // console.log("Starting CleanVoice audio enhancement process...");
 
       // First, upload the file to get a publicly accessible URL
       // Create a temporary upload for processing
