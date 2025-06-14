@@ -47,12 +47,12 @@ export const redisPort = parseInt(process.env.REDIS_PORT || "6379");
 export const redisUserName = process.env.REDIS_USERNAME || "default";
 export const redisPassword = process.env.REDIS_PASSWORD || "test123";  // Match the password
 
-console.log("Redis Configuration:", {
-  host: redisHost,
-  port: redisPort,
-  username: redisUserName,
-  password: redisPassword,
-});
+// console.log("Redis Configuration:", {
+//   host: redisHost,
+//   port: redisPort,
+//   username: redisUserName,
+//   password: redisPassword,
+// });
 // Create Queue with Enhanced Configuration
 const audioProcessingQueue = new Queue("audio-processing", {
   connection: {

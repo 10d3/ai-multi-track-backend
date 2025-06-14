@@ -18,7 +18,7 @@ const worker = new Worker<JobData>(
     const audioProcessor = new AudioProcessor();
     await audioProcessor.init();
 
-    console.log("Processing job:", job.id, job.data);
+    // console.log("Processing job:", job.id, job.data);
 
     try {
       let ttsConvertedPaths = [];
@@ -188,7 +188,7 @@ function getCurrentStepName(step: number): string {
 }
 
 worker.on("completed", async (job, result) => {
-  console.log(`Job ${job.id} completed with result:`, result);
+  // console.log(`Job ${job.id} completed with result:`, result);
   try {
     await notifyAPI(job);
   } catch (error) {
@@ -204,6 +204,6 @@ worker.on("error", (error) => {
   console.error("Worker error:", error);
 });
 
-console.log("Worker started");
+// console.log("Worker started");
 
 export default worker;

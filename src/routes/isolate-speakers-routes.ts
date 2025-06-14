@@ -5,7 +5,7 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 
 router.post("/", auth, async (req, res) => {
-  console.log(req.body);
+  // console.log(req.body);
   const { transcription, audioFilePath } = req.body;
 
   if (!transcription || !audioFilePath) {

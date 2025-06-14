@@ -55,7 +55,7 @@ export async function isolateSpeakers({
             if (error) {
               reject(`Error extracting segment: ${error.message}`);
             } else {
-              console.log(`Extracted segment to: ${outputFilePath}`);
+              // console.log(`Extracted segment to: ${outputFilePath}`);
               segment.filePath = outputFilePath;
               resolve();
             }

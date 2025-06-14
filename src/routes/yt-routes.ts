@@ -19,7 +19,7 @@ const auth = require('../middleware/auth');
 // });
 
 router.post("/", async (req, res) => {
-  console.log(req.body);
+  // console.log(req.body);
   const { url } = req.body;
 
   if (!url) {
@@ -51,7 +51,7 @@ router.post("/", async (req, res) => {
         });
 
         const publicUrl = `https://storage.googleapis.com/${bucketName}/${filePath}`;
-        console.log(`Public URL: ${publicUrl}`);
+        // console.log(`Public URL: ${publicUrl}`);
         res.json({ publicUrl });
         fs.unlinkSync(filePath);
       } catch (error) {

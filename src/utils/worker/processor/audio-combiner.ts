@@ -311,6 +311,10 @@ export class AudioCombiner {
         // If your segment.start and segment.end are in milliseconds
         const targetDurationMs = segment.end - segment.start; // milliseconds
         const targetDurationSec = targetDurationMs / 1000;   // convert to seconds
+
+        console.log("duration in miliseconde:", targetDurationMs)
+
+        console.log("duration is :", targetDurationSec)
         
         console.log(`Processing segment ${segment.originalIndex} - target duration: ${targetDurationSec.toFixed(3)}s`);
 

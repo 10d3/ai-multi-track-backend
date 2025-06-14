@@ -143,21 +143,3 @@ export {
   transcribeAudio,
   transcribeAudioFromUrl
 };
-
-// Example usage:
-/*
-const result = await transcribeAudio({
-  apiKey: "YOUR_API_KEY",
-  audioPath: "input_audio.mp3",
-  language: "en",
-  ignoreTimestamps: false
-});
-
-console.log(`Transcribed text: ${result.text}`);
-console.log(`Audio duration: ${result.duration} seconds`);
-
-for (const segment of result.segments) {
-  console.log(`Segment: ${segment.text}`);
-  console.log(`Start time: ${segment.start}, End time: ${segment.end}`);
-}
-*/

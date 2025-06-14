@@ -92,13 +92,13 @@ app.get("/events/:jobId", sseRateLimit, authenticateSSE, (req, res) => {
   const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
   const userId = (req as any).userId;
 
-  console.log(`[SSE] New connection request received:`, {
-    jobId,
-    clientIp,
-    userId,
-    timestamp: new Date().toISOString(),
-    userAgent: req.headers['user-agent'],
-  });
+  // console.log(`[SSE] New connection request received:`, {
+  //   jobId,
+  //   clientIp,
+  //   userId,
+  //   timestamp: new Date().toISOString(),
+  //   userAgent: req.headers['user-agent'],
+  // });
 
   // Validate jobId
   if (!validateJobId(jobId)) {
@@ -145,7 +145,7 @@ app.get("/events/:jobId", sseRateLimit, authenticateSSE, (req, res) => {
   }
   ipConnections.add(jobId);
 
-  console.log(`[SSE] Connection established for job ${jobId}. Active connections: ${connections.size}`);
+  // console.log(`[SSE] Connection established for job ${jobId}. Active connections: ${connections.size}`);
 
   // Send initial connection confirmation
   const confirmationMessage = {
@@ -168,7 +168,7 @@ app.get("/events/:jobId", sseRateLimit, authenticateSSE, (req, res) => {
 
   // Handle client disconnect
   req.on("close", () => {
-    console.log(`[SSE] Client disconnected from job ${jobId}`);
+    // console.log(`[SSE] Client disconnected from job ${jobId}`);
     cleanupConnection(jobId);
   });
 
@@ -210,7 +210,7 @@ const cleanupConnection = (jobId: string) => {
     }
     
     connections.delete(jobId);
-    console.log(`[SSE] Connection cleaned up for job ${jobId}. Active connections: ${connections.size}`);
+    // console.log(`[SSE] Connection cleaned up for job ${jobId}. Active connections: ${connections.size}`);
   }
 };
 
@@ -367,11 +367,11 @@ const sendJobUpdateImmediate = (jobId: string, updateData: any) => {
   }
 
   try {
-    console.log(`[SSE] Sending update to client for job ${jobId}:`, {
-      state: updateData.state,
-      progress: updateData.progress,
-      processingStage: updateData.processingStage,
-    });
+    // console.log(`[SSE] Sending update to client for job ${jobId}:`, {
+    //   state: updateData.state,
+    //   progress: updateData.progress,
+    //   processingStage: updateData.processingStage,
+    // });
 
     connectionInfo.response.write(`data: ${JSON.stringify(updateData)}\n\n`);
     connectionInfo.lastHeartbeat = Date.now();
@@ -380,7 +380,7 @@ const sendJobUpdateImmediate = (jobId: string, updateData: any) => {
     if (updateData.state === "completed" || updateData.state === "failed") {
       setTimeout(() => {
         if (connections.has(jobId)) {
-          console.log(`[SSE] Closing connection for ${updateData.state} job ${jobId}`);
+          // console.log(`[SSE] Closing connection for ${updateData.state} job ${jobId}`);
           cleanupConnection(jobId);
         }
       }, 5000);
@@ -406,7 +406,7 @@ const sendHeartbeat = () => {
     const timeSinceLastHeartbeat = now - connectionInfo.lastHeartbeat;
     
     if (timeSinceLastHeartbeat > CONNECTION_TIMEOUT) {
-      console.log(`[SSE] Connection timeout for job ${jobId}`);
+      // console.log(`[SSE] Connection timeout for job ${jobId}`);
       staleConnections.push(jobId);
       continue;
     }
@@ -434,13 +434,13 @@ const sendHeartbeat = () => {
 const performCleanup = () => {
   const now = Date.now();
   
-  console.log(`[SSE] Performing periodic cleanup. Active connections: ${connections.size}`);
+  // console.log(`[SSE] Performing periodic cleanup. Active connections: ${connections.size}`);
   
   // Clean up old pending updates
   for (const [jobId, updates] of pendingUpdates) {
     const oldUpdates = updates.filter(update => now - update.timestamp > BATCH_UPDATE_DELAY * 5);
     if (oldUpdates.length > 0) {
-      console.log(`[SSE] Cleaning up ${oldUpdates.length} old pending updates for job ${jobId}`);
+      // console.log(`[SSE] Cleaning up ${oldUpdates.length} old pending updates for job ${jobId}`);
       pendingUpdates.set(jobId, updates.filter(update => now - update.timestamp <= BATCH_UPDATE_DELAY * 5));
     }
   }
@@ -461,7 +461,7 @@ const performCleanup = () => {
     pendingUpdates: pendingUpdates.size,
   };
   
-  console.log(`[SSE] Connection statistics:`, connectionStats);
+  // console.log(`[SSE] Connection statistics:`, connectionStats);
 };
 
 // Enhanced event listeners with error handling

@@ -6,7 +6,7 @@ const router = express.Router();
 router.get("/:jobId", async (req, res) => {
   const { jobId } = req.params;
 
-  console.log(jobId)
+  // console.log(jobId)
 
   try {
     const job = await audioProcessingQueue.getJob(jobId);

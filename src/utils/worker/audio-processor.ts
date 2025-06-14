@@ -91,9 +91,9 @@ export class AudioProcessor {
     // Process each speaker's requests
     for (const speaker in requestsBySpeaker) {
       const speakerRequests = requestsBySpeaker[speaker];
-      console.log(
-        `[AudioProcessor] Processing ${speakerRequests.length} requests for speaker ${speaker}`
-      );
+      // console.log(
+      //   `[AudioProcessor] Processing ${speakerRequests.length} requests for speaker ${speaker}`
+      // );
 
       // Get reference audio for this speaker
       let referenceAudio =
@@ -105,9 +105,9 @@ export class AudioProcessor {
       );
 
       if (needsCloning && !referenceAudio) {
-        console.log(
-          `[AudioProcessor] Voice cloning requested for speaker ${speaker} but no reference audio found. Creating one on demand.`
-        );
+        // console.log(
+        //   `[AudioProcessor] Voice cloning requested for speaker ${speaker} but no reference audio found. Creating one on demand.`
+        // );
 
         try {
           // Filter transcript to only include segments for this speaker
@@ -119,20 +119,20 @@ export class AudioProcessor {
 
           // Download and use the original audio if URL is provided
           if (originalAudioUrl) {
-            console.log(
-              `[AudioProcessor] Downloading original audio for reference: ${originalAudioUrl}`
-            );
+            // console.log(
+            //   `[AudioProcessor] Downloading original audio for reference: ${originalAudioUrl}`
+            // );
             audioPath = await this.fileProcessor.downloadAndConvertAudio(
               originalAudioUrl
             );
-            console.log(
-              `[AudioProcessor] Downloaded original audio to: ${audioPath}`
-            );
+            // console.log(
+            //   `[AudioProcessor] Downloaded original audio to: ${audioPath}`
+            // );
           } else {
             // Fallback to the old method if no original audio URL is provided
-            console.log(
-              `[AudioProcessor] No original audio URL provided, searching for available audio files...`
-            );
+            // console.log(
+            //   `[AudioProcessor] No original audio URL provided, searching for available audio files...`
+            // );
 
             // Find a suitable audio file to use as source
             const tempDir = await this.fileProcessor.createTempDir(
@@ -146,9 +146,9 @@ export class AudioProcessor {
             if (audioFiles.length > 0) {
               // Use the first available audio file as source
               audioPath = path.join(tempDir, audioFiles[0]);
-              console.log(
-                `[AudioProcessor] Found audio file to use: ${audioPath}`
-              );
+              // console.log(
+              //   `[AudioProcessor] Found audio file to use: ${audioPath}`
+              // );
             }
           }
 
@@ -161,9 +161,9 @@ export class AudioProcessor {
               )
             ).get(speaker);
 
-            console.log(
-              `[AudioProcessor] Created reference audio for speaker ${speaker}: ${referenceAudio}`
-            );
+            // console.log(
+            //   `[AudioProcessor] Created reference audio for speaker ${speaker}: ${referenceAudio}`
+            // );
           } else {
             console.warn(
               `[AudioProcessor] No suitable audio files found to create reference for speaker ${speaker}`
@@ -195,9 +195,9 @@ export class AudioProcessor {
                   )
                 ).get(speaker);
 
-                console.log(
-                  `[AudioProcessor] Created fallback reference audio from vocals: ${referenceAudio}`
-                );
+                // console.log(
+                //   `[AudioProcessor] Created fallback reference audio from vocals: ${referenceAudio}`
+                // );
               }
             }
           }
@@ -211,9 +211,9 @@ export class AudioProcessor {
             for (const request of speakerRequests) {
               if (request.voice_id === "cloning-voice") {
                 request.voice_id = "en-US-Neural2-F"; // Use a default voice as fallback
-                console.log(
-                  `[AudioProcessor] Switched to default voice for speaker ${speaker}`
-                );
+                // console.log(
+                //   `[AudioProcessor] Switched to default voice for speaker ${speaker}`
+                // );
               }
             }
           }
@@ -226,9 +226,9 @@ export class AudioProcessor {
           for (const request of speakerRequests) {
             if (request.voice_id === "cloning-voice") {
               request.voice_id = "american-male"; // Use a default voice as fallback
-              console.log(
-                `[AudioProcessor] Switched to default voice for speaker ${speaker} due to error`
-              );
+              // console.log(
+              //   `[AudioProcessor] Switched to default voice for speaker ${speaker} due to error`
+              // );
             }
           }
         }
@@ -252,16 +252,16 @@ export class AudioProcessor {
         }
       }
 
-      console.log(
-        `[AudioProcessor] Prepared requests for speaker ${speaker}:`,
-        {
-          hasReferenceAudio: !!referenceAudio,
-          isCloning: speakerRequests.some(
-            (req) => req.voice_id === "cloning-voice"
-          ),
-          requestCount: speakerRequests.length,
-        }
-      );
+      // console.log(
+      //   `[AudioProcessor] Prepared requests for speaker ${speaker}:`,
+      //   {
+      //     hasReferenceAudio: !!referenceAudio,
+      //     isCloning: speakerRequests.some(
+      //       (req) => req.voice_id === "cloning-voice"
+      //     ),
+      //     requestCount: speakerRequests.length,
+      //   }
+      // );
 
       try {
         const results = await this.zyphraTTS.processZypMultipleTTS(
@@ -301,9 +301,9 @@ export class AudioProcessor {
       }
     }
 
-    console.log(
-      `[AudioProcessor] Reconstructed ${allResults.length} results in original transcript order`
-    );
+    // console.log(
+    //   `[AudioProcessor] Reconstructed ${allResults.length} results in original transcript order`
+    // );
     return allResults;
   }
 
@@ -371,9 +371,9 @@ export class AudioProcessor {
    */
   async enhanceAudioWithCleanVoice(audioPath: string): Promise<string> {
     if (!this.cleanVoiceApiKey) {
-      console.log(
-        "CleanVoice API key not provided. Skipping audio enhancement."
-      );
+      // console.log(
+      //   "CleanVoice API key not provided. Skipping audio enhancement."
+      // );
       return audioPath;
     }
 
@@ -406,7 +406,7 @@ export class AudioProcessor {
       };
 
       // Submit the job to CleanVoice
-      console.log("Submitting job to CleanVoice API...");
+      // console.log("Submitting job to CleanVoice API...");
       const response = await axios.post(this.cleanVoiceApiUrl, data, {
         headers,
       });
@@ -416,11 +416,11 @@ export class AudioProcessor {
       }
 
       const jobId = response.data.id;
-      console.log(`CleanVoice job created with ID: ${jobId}`);
+      // console.log(`CleanVoice job created with ID: ${jobId}`);
 
       // Poll for job completion
       let attempts = 0;
-      const maxAttempts = 500; // Maximum number of polling attempts
+      const maxAttempts = 300; // Maximum number of polling attempts
       const pollingInterval = 5000; // 5 seconds between polls
       const statusUrl = `${this.cleanVoiceApiUrl}/${jobId}`;
 
@@ -434,10 +434,10 @@ export class AudioProcessor {
           const statusResponse = await axios.get(statusUrl, { headers });
 
           // Log the full response structure for debugging
-          console.log(
-            "CleanVoice API response structure:",
-            JSON.stringify(statusResponse.data, null, 2)
-          );
+          // console.log(
+          //   "CleanVoice API response structure:",
+          //   JSON.stringify(statusResponse.data, null, 2)
+          // );
 
           // Check for both possible success status values: "completed" and "SUCCESS"
           if (

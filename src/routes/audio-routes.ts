@@ -13,14 +13,14 @@ router.post("/", auth, upload.single("videoFile"), async (req, res) => {
   const file = req.file;
 
   if (!file) {
-    console.log("Invalid request: no video file provided");
+    // console.log("Invalid request: no video file provided");
     return res
       .status(400)
       .json({ error: "Invalid request: no video file provided" });
   }
 
   try {
-    console.log("Processing video file");
+    // console.log("Processing video file");
 
     const inputPath = path.join(__dirname, file.path);
     const outputPath = path.join(__dirname, "..", "public", "audio.mp3");
@@ -38,7 +38,7 @@ router.post("/", auth, upload.single("videoFile"), async (req, res) => {
         console.error(`ffmpeg stderr: ${stderr}`);
       }
 
-      console.log(`ffmpeg stdout: ${stdout}`);
+      // console.log(`ffmpeg stdout: ${stdout}`);
 
       res.json({ message: "Video processed successfully", absoluteUrl });
 
