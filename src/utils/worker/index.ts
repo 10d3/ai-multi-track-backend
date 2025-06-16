@@ -5,150 +5,92 @@ import type { JobData } from "../types/type";
 import { AudioProcessor } from "./audio-processor";
 import { updateAudioProcessStatus } from "../../controllers/transcreation.controller";
 
-
-const PRIORITY_LEVELS = {
-  FREE: 3,
-  STANDARD: 2,
-  PREMIUM: 1
-};
-
 const worker = new Worker<JobData>(
   "audio-processing",
   async (job) => {
     const audioProcessor = new AudioProcessor();
     await audioProcessor.init();
 
-    // console.log("Processing job:", job.data);
-
     try {
-      let ttsConvertedPaths = [];
-      let totalSteps = 3;
-      let completedSteps = 0;
       const startTime = Date.now();
-      let stepTimes: number[] = [];
-      let lastStepTime = startTime;
 
-      const recordStepTime = () => {
-        const currentTime = Date.now();
-        const elapsedTime = currentTime - lastStepTime; // Time for the current step
-        stepTimes.push(elapsedTime);
-        lastStepTime = currentTime; // Update for the next step
+      // Validate input data
+      if (!job.data.ttsRequests?.length && !job.data.audioUrls?.length) {
+        throw new Error("No audio URLs or TTS requests provided");
+      }
 
-        const averageTimePerStep =
-          stepTimes.reduce((a, b) => a + b, 0) / stepTimes.length;
-        const remainingSteps = totalSteps - completedSteps;
-        const estimatedRemainingTime = averageTimePerStep * remainingSteps;
+      if (!job.data.originalAudioUrl) {
+        throw new Error("Original audio URL is required");
+      }
 
-        job.updateData({
-          ...job.data,
-          processingDetails: {
-            currentStep: completedSteps,
-            totalSteps,
-            elapsedTime,
-            estimatedRemainingTime,
-            stepTimes,
-            lastStepName: getCurrentStepName(completedSteps),
-          },
-        });
-      };
+      let speechFiles: string[] = [];
+
+      // Step 1: Generate speech from text or process audio URLs
+      await job.updateProgress(10);
+      await job.updateData({
+        ...job.data,
+        currentOperation: "Generating speech from text",
+      });
 
       if (job.data.ttsRequests?.length) {
-        await job.updateProgress(5);
-        await job.updateData({
-          ...job.data,
-          currentOperation: "Generating speech from text",
-          startTime,
-        });
-
-        ttsConvertedPaths = await audioProcessor.processMultipleTTS(
+        speechFiles = await audioProcessor.processMultipleTTS(
           job.data.transcript,
           job.data.ttsRequests,
           job.data.originalAudioUrl,
           job.data.language
         );
-        totalSteps = job.data.ttsRequests.length + 2;
       } else if (job.data.audioUrls?.length) {
-        await job.updateData({
-          ...job.data,
-          currentOperation: "Processing audio files",
-          startTime,
-        });
-        await job.updateProgress(5);
-
-        ttsConvertedPaths = await audioProcessor.processTTSFiles(
-          job.data.audioUrls
-        );
-        totalSteps = 3;
-      } else {
-        throw new Error("No audio URLs or TTS requests provided");
+        // Process audio URLs - add this method back to AudioProcessor
+        speechFiles = await audioProcessor.processAudioUrls(job.data.audioUrls);
       }
 
-      completedSteps++;
-      await job.updateProgress(Math.round((completedSteps / totalSteps) * 100));
-      recordStepTime();
-
-      // Process background track
+      // Step 2: Separate background music from original audio
+      await job.updateProgress(40);
       await job.updateData({
         ...job.data,
         currentOperation: "Separating background music",
       });
+
       const backgroundTrack = await audioProcessor.separateOriginalAudio(
         job.data.originalAudioUrl,
         job.data.transcript
       );
 
-      completedSteps++;
-      await job.updateProgress(Math.round((completedSteps / totalSteps) * 100));
-      recordStepTime();
-
-      // Combine audio
+      // Step 3: Combine speech with background music
+      await job.updateProgress(70);
       await job.updateData({
         ...job.data,
         currentOperation: "Combining speech with background",
       });
-      const combinedAudioPath =
-        await audioProcessor.combineAllSpeechWithBackground(
-          ttsConvertedPaths,
-          backgroundTrack,
-          job.data.transcript
-        );
 
-      completedSteps++;
-      await job.updateProgress(Math.round((completedSteps / totalSteps) * 100));
-      recordStepTime();
-
-      // Upload final result
-      await job.updateData({
-        ...job.data,
-        currentOperation: "Finalizing and uploading",
-      });
-      const finalAudioUrl = await audioProcessor.uploadToStorage(
-        combinedAudioPath
+      const combinedAudioPath = await audioProcessor.combineAllSpeechWithBackground(
+        speechFiles,
+        backgroundTrack,
+        job.data.transcript
       );
 
-      completedSteps++;
-      await job.updateProgress(100);
-      recordStepTime();
+      // Step 4: Upload final result
+      await job.updateProgress(90);
+      await job.updateData({
+        ...job.data,
+        currentOperation: "Uploading final audio",
+      });
 
+      const finalAudioUrl = await audioProcessor.uploadToStorage(combinedAudioPath);
+
+      // Complete
+      await job.updateProgress(100);
       await updateAudioProcessStatus(job.data.id, "completed", finalAudioUrl);
 
       return {
         finalAudioUrl,
         processingTime: Date.now() - startTime,
       };
+
     } catch (error: any) {
       console.error("Job processing error:", error);
-
-      if (error.code === "ECONNRESET") {
-        console.error("Network error occurred. Retrying...");
-        // Add retry logic here if applicable
-      } else if (
-        error.message.includes("No audio URLs or TTS requests provided")
-      ) {
-        console.error("Invalid job data. Skipping job.");
-      }
-
-      throw error; // Rethrow after handling
+      await updateAudioProcessStatus(job.data.id, "failed");
+      throw error;
     } finally {
       await audioProcessor.cleanup();
     }
@@ -161,34 +103,12 @@ const worker = new Worker<JobData>(
       password: redisPassword,
     },
     concurrency: 2,
-    removeOnComplete: {
-      age: 3600,
-      count: 1000,
-    },
-    removeOnFail: {
-      age: 24 * 3600,
-      count: 100,
-    },
+    removeOnComplete: { age: 3600, count: 100 },
+    removeOnFail: { age: 24 * 3600, count: 50 },
   }
 );
 
-function getCurrentStepName(step: number): string {
-  const stepNames = [
-    "Processing audio files",
-    "Separating background music",
-    "Combining speech with background",
-    "Finalizing and uploading",
-  ];
-
-  if (step < 0 || step >= stepNames.length) {
-    return `Unknown step (${step})`;
-  }
-
-  return stepNames[step];
-}
-
 worker.on("completed", async (job, result) => {
-  // console.log(`Job ${job.id} completed with result:`, result);
   try {
     await notifyAPI(job);
   } catch (error) {
@@ -196,14 +116,15 @@ worker.on("completed", async (job, result) => {
   }
 });
 
-worker.on("failed", (job, error) => {
-  console.error(`Job ${job?.id} failed with error:`, error);
+worker.on("failed", async (job, error) => {
+  console.error(`Job ${job?.id} failed:`, error.message);
+  if (job) {
+    await updateAudioProcessStatus(job.data.id, "failed");
+  }
 });
 
 worker.on("error", (error) => {
   console.error("Worker error:", error);
 });
-
-// console.log("Worker started");
 
 export default worker;
