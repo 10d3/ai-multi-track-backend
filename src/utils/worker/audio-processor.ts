@@ -214,36 +214,43 @@ export class AudioProcessor {
   /**
    * Upload file to storage with optional final enhancement
    */
-  async uploadToStorage(filePath: string, enhance: boolean = true, quality: 'standard' | 'high' | 'ultra' = 'high'): Promise<string> {
+  async uploadToStorage(
+    filePath: string,
+    enhance: boolean = true,
+    quality: "standard" | "high" | "ultra" = "high"
+  ): Promise<string> {
     let finalPath = filePath;
-    
+
     if (enhance) {
-      console.log(`Enhancing final audio with ${quality} quality before upload...`);
+      console.log(
+        `Enhancing final audio with ${quality} quality before upload...`
+      );
       finalPath = await this.enhanceFinalAudio(filePath, quality);
     }
-    
+
     return this.storageProcessor.uploadToStorage(finalPath);
   }
 
   /**
    * Enhance final combined audio using FFmpeg 6 advanced processing
    */
-  private async enhanceFinalAudio(inputPath: string, quality: 'standard' | 'high' | 'ultra' = 'high'): Promise<string> {
-    const enhancedPath = await this.fileProcessor.createTempPath("final_enhanced", "wav");
-    
+  private async enhanceFinalAudio(
+    inputPath: string,
+    quality: "standard" | "high" | "ultra" = "high"
+  ): Promise<string> {
+    const enhancedPath = await this.fileProcessor.createTempPath(
+      "final_enhanced",
+      "wav"
+    );
+
     try {
       await this.processAudioFFmpeg6(inputPath, enhancedPath, {
         quality,
-        enhanceSpeech: true,
-        removeSilence: false, // Don't remove silence from final audio (might cut speech)
-        useAINoise: true,
         sampleRate: 44100, // Higher quality for final output
-        targetLoudness: -16 // Broadcast standard for final audio
       });
-      
+
       console.log(`Final audio enhanced with ${quality} quality`);
       return enhancedPath;
-      
     } catch (error) {
       console.warn("Final audio enhancement failed, using original:", error);
       return inputPath; // Fallback to original if enhancement fails
@@ -251,66 +258,68 @@ export class AudioProcessor {
   }
 
   /**
-   * FFmpeg 6 Advanced Audio Processing for final enhancement
+   * Enhanced final audio processing - optimized for speech+music content
+   * Removes bass buildup and noise while enhancing speech clarity
    */
-  private async processAudioFFmpeg6(inputPath: string, outputPath: string, options: {
-    sampleRate?: number;
-    targetLoudness?: number;
-    useAINoise?: boolean;
-    removeSilence?: boolean;
-    enhanceSpeech?: boolean;
-    quality?: 'standard' | 'high' | 'ultra';
-  } = {}): Promise<void> {
-    
-    const {
-      sampleRate = 44100,
-      targetLoudness = -16,
-      useAINoise = true,
-      removeSilence = false,
-      enhanceSpeech = true,
-      quality = 'standard'
-    } = options;
+  private async processAudioFFmpeg6(
+    inputPath: string,
+    outputPath: string,
+    options: {
+      sampleRate?: number;
+      quality?: "standard" | "high" | "ultra";
+    } = {}
+  ): Promise<void> {
+    const { sampleRate = 44100, quality = "high" } = options;
 
-    const filters: string[] = [];
-    
-    // Enhanced frequency filtering for final audio
-    filters.push('highpass=f=20'); // Preserve more low frequencies for music
-    filters.push(quality === 'ultra' ? 'lowpass=f=20000' : 'lowpass=f=15000');
-    
-    // FFmpeg 6 speech enhancement (gentle for final mix)
-    if (enhanceSpeech) {
-      filters.push('speechnorm=e=15:r=0.0001:l=1'); // Gentler for mixed content
-    }
-    
-    // Advanced noise reduction
-    if (useAINoise) {
-      filters.push('afftdn=nf=-20:nt=w:tn=1:om=o:tn=1'); // Gentler for final mix
-    }
-    
-    // Dynamic audio normalization (preserve music dynamics)
-    filters.push('dynaudnorm=f=500:g=15:n=0:s=0.9:r=0.8:b=1');
-    
-    // Optional silence removal (careful with final audio)
-    if (removeSilence) {
-      filters.push('silenceremove=start_periods=1:start_duration=0.5:start_threshold=-60dB:detection=peak:stop_periods=-1:stop_duration=0.5:stop_threshold=-60dB');
-    }
-    
-    // Final mastering with loudnorm
-    const loudnormParams = quality === 'ultra' 
-      ? `loudnorm=I=${targetLoudness}:TP=-1:LRA=11:linear=true:tp=${targetLoudness + 2}`
-      : `loudnorm=I=${targetLoudness}:TP=-1.5:LRA=7:linear=true`;
-    
-    filters.push(loudnormParams);
+    // Optimized filter chain for clean speech+music enhancement
+    let filterChain = "";
 
-    const filterString = filters.join(',');
-    
-    // FFmpeg 6 with optimized settings for final mastering
+    if (quality === "standard") {
+      // Basic enhancement - fast processing
+      filterChain = [
+        "highpass=f=80",
+        "afftdn=nr=15:nf=-15:nt=w",
+        "equalizer=f=1000:width_type=h:width=1.5:g=2",
+        "equalizer=f=3000:width_type=h:width=1:g=3",
+        "dynaudnorm=p=0.9:m=10:s=20:g=10",
+        "lowpass=f=12000"
+      ].join(",");
+    } else if (quality === "ultra") {
+      // Maximum quality enhancement
+      filterChain = [
+        "highpass=f=80",
+        "anlmdn=s=0.00001:p=0.15:r=0.02:m=15",
+        "afftdn=nr=25:nf=-25:nt=w",
+        "equalizer=f=200:width_type=h:width=2:g=6",
+        "equalizer=f=1000:width_type=h:width=1.5:g=3",
+        "equalizer=f=3000:width_type=h:width=1:g=4",
+        "equalizer=f=8000:width_type=h:width=2:g=2",
+        "compand=attacks=0.1:decays=0.2:points=-80/-80|-20/-15|-10/-10|-5/-7|0/-3|20/0",
+        "dynaudnorm=p=0.9:m=15:s=30:g=15",
+        "lowpass=f=12000"
+      ].join(",");
+    } else {
+      // High quality (default) - balanced processing
+      filterChain = [
+        "highpass=f=80",
+        "anlmdn=s=0.00001:p=0.15:r=0.02:m=15",
+        "afftdn=nr=20:nf=-20:nt=w",
+        "equalizer=f=200:width_type=h:width=2:g=6",
+        "equalizer=f=1000:width_type=h:width=1.5:g=3",
+        "equalizer=f=3000:width_type=h:width=1:g=4",
+        "equalizer=f=8000:width_type=h:width=2:g=2",
+        "compand=attacks=0.1:decays=0.2:points=-80/-80|-20/-15|-10/-10|-5/-7|0/-3|20/0",
+        "dynaudnorm=p=0.9:m=15:s=30:g=15",
+        "lowpass=f=12000"
+      ].join(",");
+    }
+
+    console.log(`[AudioProcessor] Applying ${quality} quality enhancement`);
+
+    // Execute enhanced processing
     await execAsync(
-      `ffmpeg -y -threads 0 -i "${inputPath}" \
-       -af "${filterString}" \
-       -c:a pcm_s24le -ar ${sampleRate} \
-       -f wav "${outputPath}"`,
-      { maxBuffer: 1024 * 1024 * 20 } // 20MB buffer for large final files
+      `ffmpeg -y -threads 0 -i "${inputPath}" -af "${filterChain}" -c:a pcm_s24le -ar ${sampleRate} "${outputPath}"`,
+      { maxBuffer: 1024 * 1024 * 20 }
     );
   }
 }
