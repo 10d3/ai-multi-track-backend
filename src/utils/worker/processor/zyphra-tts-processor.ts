@@ -74,6 +74,22 @@ export class ZyphraTTS {
   }
 
   /**
+   * Default neutral emotion weights to prevent AI creativity
+   */
+  private getDefaultEmotion() {
+    return {
+      happiness: 0.1,
+      neutral: 0.9,
+      sadness: 0.0,
+      disgust: 0.0,
+      fear: 0.0,
+      surprise: 0.0,
+      anger: 0.0,
+      other: 0.0,
+    };
+  }
+
+  /**
    * Generate TTS audio from text
    */
   async generateTTS({
@@ -82,6 +98,7 @@ export class ZyphraTTS {
     voice_name,
     language_iso_code,
     referenceAudioPath,
+    emotion,
   }: ZyphraTTSRequest): Promise<string> {
     if (!textToSpeech?.trim()) {
       throw new Error("Text is required for TTS generation");
@@ -96,18 +113,9 @@ export class ZyphraTTS {
       speaking_rate: 10,
       mime_type: "audio/mp3",
       model: "zonos-v0.1-transformer",
-      vqscore: 0.5,
+      vqscore: 0.6, // Must be between 0.6 and 0.8 per Zyphra API requirements
       language_iso_code,
-      emotion: {
-        happiness: 0.1,
-        neutral: 0.9,
-        sadness: 0.0,
-        disgust: 0.0,
-        fear: 0.0,
-        surprise: 0.0,
-        anger: 0.0,
-        other: 0.0,
-      },
+      emotion: emotion || this.getDefaultEmotion(), // Use provided emotion or default
     };
 
     // Handle voice cloning
