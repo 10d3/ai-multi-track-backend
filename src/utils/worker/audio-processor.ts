@@ -212,9 +212,105 @@ export class AudioProcessor {
   }
 
   /**
-   * Upload file to storage
+   * Upload file to storage with optional final enhancement
    */
-  async uploadToStorage(filePath: string): Promise<string> {
-    return this.storageProcessor.uploadToStorage(filePath);
+  async uploadToStorage(filePath: string, enhance: boolean = true, quality: 'standard' | 'high' | 'ultra' = 'high'): Promise<string> {
+    let finalPath = filePath;
+    
+    if (enhance) {
+      console.log(`Enhancing final audio with ${quality} quality before upload...`);
+      finalPath = await this.enhanceFinalAudio(filePath, quality);
+    }
+    
+    return this.storageProcessor.uploadToStorage(finalPath);
+  }
+
+  /**
+   * Enhance final combined audio using FFmpeg 6 advanced processing
+   */
+  private async enhanceFinalAudio(inputPath: string, quality: 'standard' | 'high' | 'ultra' = 'high'): Promise<string> {
+    const enhancedPath = await this.fileProcessor.createTempPath("final_enhanced", "wav");
+    
+    try {
+      await this.processAudioFFmpeg6(inputPath, enhancedPath, {
+        quality,
+        enhanceSpeech: true,
+        removeSilence: false, // Don't remove silence from final audio (might cut speech)
+        useAINoise: true,
+        sampleRate: 44100, // Higher quality for final output
+        targetLoudness: -16 // Broadcast standard for final audio
+      });
+      
+      console.log(`Final audio enhanced with ${quality} quality`);
+      return enhancedPath;
+      
+    } catch (error) {
+      console.warn("Final audio enhancement failed, using original:", error);
+      return inputPath; // Fallback to original if enhancement fails
+    }
+  }
+
+  /**
+   * FFmpeg 6 Advanced Audio Processing for final enhancement
+   */
+  private async processAudioFFmpeg6(inputPath: string, outputPath: string, options: {
+    sampleRate?: number;
+    targetLoudness?: number;
+    useAINoise?: boolean;
+    removeSilence?: boolean;
+    enhanceSpeech?: boolean;
+    quality?: 'standard' | 'high' | 'ultra';
+  } = {}): Promise<void> {
+    
+    const {
+      sampleRate = 44100,
+      targetLoudness = -16,
+      useAINoise = true,
+      removeSilence = false,
+      enhanceSpeech = true,
+      quality = 'standard'
+    } = options;
+
+    const filters: string[] = [];
+    
+    // Enhanced frequency filtering for final audio
+    filters.push('highpass=f=20'); // Preserve more low frequencies for music
+    filters.push(quality === 'ultra' ? 'lowpass=f=20000' : 'lowpass=f=15000');
+    
+    // FFmpeg 6 speech enhancement (gentle for final mix)
+    if (enhanceSpeech) {
+      filters.push('speechnorm=e=15:r=0.0001:l=1'); // Gentler for mixed content
+    }
+    
+    // Advanced noise reduction
+    if (useAINoise) {
+      filters.push('afftdn=nf=-20:nt=w:tn=1:om=o:tn=1'); // Gentler for final mix
+    }
+    
+    // Dynamic audio normalization (preserve music dynamics)
+    filters.push('dynaudnorm=f=500:g=15:n=0:s=0.9:r=0.8:b=1');
+    
+    // Optional silence removal (careful with final audio)
+    if (removeSilence) {
+      filters.push('silenceremove=start_periods=1:start_duration=0.5:start_threshold=-60dB:detection=peak:stop_periods=-1:stop_duration=0.5:stop_threshold=-60dB');
+    }
+    
+    // Final mastering with loudnorm
+    const loudnormParams = quality === 'ultra' 
+      ? `loudnorm=I=${targetLoudness}:TP=-1:LRA=11:linear=true:tp=${targetLoudness + 2}`
+      : `loudnorm=I=${targetLoudness}:TP=-1.5:LRA=7:linear=true`;
+    
+    filters.push(loudnormParams);
+
+    const filterString = filters.join(',');
+    
+    // FFmpeg 6 with optimized settings for final mastering
+    await execAsync(
+      `ffmpeg -y -threads 0 -i "${inputPath}" \
+       -af "${filterString}" \
+       -c:a pcm_s24le -ar ${sampleRate} \
+       -f wav "${outputPath}"`,
+      { maxBuffer: 1024 * 1024 * 20 } // 20MB buffer for large final files
+    );
   }
 }

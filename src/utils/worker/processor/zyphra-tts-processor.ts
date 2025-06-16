@@ -58,19 +58,96 @@ export class ZyphraTTS {
   /**
    * Clean reference audio for better TTS quality
    */
-  private async cleanReferenceAudio(inputPath: string): Promise<string> {
-    const outputPath = await this.fileProcessor.createTempPath(
-      "clean_ref",
-      "wav"
-    );
+  /**
+   * Clean and optimize reference audio using FFmpeg 6 advanced processing
+   */
+  private async cleanReferenceAudio(inputPath: string, quality: 'standard' | 'high' | 'ultra' = 'high'): Promise<string> {
+    const outputPath = await this.fileProcessor.createTempPath("clean_ref", "wav");
+    
+    try {
+      await this.processAudioFFmpeg6(inputPath, outputPath, {
+        quality,
+        enhanceSpeech: true,
+        removeSilence: true,
+        sampleRate: 22050,
+        targetLoudness: -20
+      });
+      
+      console.log(`[ZyphraTTS] Reference audio cleaned with ${quality} quality`);
+      return outputPath;
+      
+    } catch (error) {
+      console.warn(`[ZyphraTTS] Advanced cleaning failed, using basic method:`, error);
+      // Fallback to basic cleaning
+      await execAsync(
+        `ffmpeg -y -i "${inputPath}" -af "highpass=f=80,lowpass=f=8000,loudnorm=I=-20:TP=-2" -c:a pcm_s16le -ac 1 -ar 22050 "${outputPath}"`
+      );
+      return outputPath;
+    }
+  }
 
+  /**
+   * FFmpeg 6 Advanced Speech Processing
+   */
+  private async processAudioFFmpeg6(inputPath: string, outputPath: string, options: {
+    sampleRate?: number;
+    targetLoudness?: number;
+    useAINoise?: boolean;
+    removeSilence?: boolean;
+    enhanceSpeech?: boolean;
+    quality?: 'standard' | 'high' | 'ultra';
+  } = {}): Promise<void> {
+    
+    const {
+      sampleRate = 22050,
+      targetLoudness = -20,
+      useAINoise = true,
+      removeSilence = false,
+      enhanceSpeech = true,
+      quality = 'standard'
+    } = options;
+
+    const filters: string[] = [];
+    
+    // Core frequency filtering
+    filters.push('highpass=f=85');
+    filters.push(quality === 'ultra' ? 'lowpass=f=8000' : 'lowpass=f=7500');
+    
+    // FFmpeg 6 speech enhancement
+    if (enhanceSpeech) {
+      filters.push('speechnorm=e=25:r=0.00001:l=1');
+    }
+    
+    // Advanced noise reduction (FFmpeg 6 improved)
+    if (useAINoise) {
+      filters.push('afftdn=nf=-25:nt=w:tn=1:om=o:tn=1');
+    }
+    
+    // Dynamic audio normalization (FFmpeg 6 enhanced)
+    filters.push('dynaudnorm=f=500:g=31:n=0:s=0.95:r=0.9:b=1');
+    
+    // Silence removal with FFmpeg 6 improvements
+    if (removeSilence) {
+      filters.push('silenceremove=start_periods=1:start_duration=0.3:start_threshold=-50dB:detection=peak:stop_periods=-1:stop_duration=0.3:stop_threshold=-50dB:window=0.02');
+    }
+    
+    // Enhanced loudnorm with FFmpeg 6 linear mode
+    const loudnormParams = quality === 'ultra' 
+      ? `loudnorm=I=${targetLoudness}:TP=-2:LRA=7:linear=true:tp=${targetLoudness + 3}`
+      : `loudnorm=I=${targetLoudness}:TP=-2:LRA=7:linear=true`;
+    
+    filters.push(loudnormParams);
+
+    const filterString = filters.join(',');
+    
+    // FFmpeg 6 with improved threading and progress
     await execAsync(
-      `ffmpeg -y -i "${inputPath}" \
-       -af "highpass=f=80,lowpass=f=8000,afftdn=nf=-20:nt=w,loudnorm=I=-20:TP=-2" \
-       -c:a pcm_s16le -ac 1 -ar 22050 "${outputPath}"`
+      `ffmpeg -y -threads 0 -i "${inputPath}" \
+       -af "${filterString}" \
+       -c:a pcm_s16le -ac 1 -ar ${sampleRate} \
+       -f wav "${outputPath}"`,
+      { maxBuffer: 1024 * 1024 * 10 } // 10MB buffer for large files
     );
-
-    return outputPath;
   }
 
   /**
@@ -113,17 +190,21 @@ export class ZyphraTTS {
 
     const client = await this.getClient();
     const isCloning = voice_id === "cloning-voice";
+    const isJapanese = voice_id?.startsWith("ja") || language_iso_code === "ja";
 
     // Prepare parameters
     const params: TTSParams = {
       text: textToSpeech.trim(),
-      speaking_rate: 10,
-      mime_type: "audio/mp3",
-      model: "zonos-v0.1-transformer",
-      vqscore: 0.6, // Must be between 0.6 and 0.8 per Zyphra API requirements
+      speaking_rate: 15, // Reduced for more natural speech
+      mime_type: "audio/wav",
+      model: isJapanese ? "zonos-v0.1-hybrid" : "zonos-v0.1-transformer", // Hybrid for Japanese
+      vqscore: 0.7, // Minimum to reduce AI creativity
       language_iso_code,
       emotion: finalEmotion, // Use provided emotion from request or default
     };
+
+    // Log model selection for debugging
+    console.log(`[ZyphraTTS] Model: ${params.model} (Japanese: ${isJapanese}, Voice: ${voice_id})`);
 
     // Handle voice cloning
     if (isCloning && referenceAudioPath) {
@@ -164,11 +245,12 @@ export class ZyphraTTS {
       audioBuffer = Buffer.from(new Uint8Array(audioData));
     }
 
-    // Save and convert to WAV
-    const tempPath = await this.fileProcessor.createTempPath("tts", "mp3");
+    // Save WAV file directly (no conversion needed)
+    const tempPath = await this.fileProcessor.createTempPath("tts", "wav");
     await fs.writeFile(tempPath, audioBuffer);
+    await this.fileProcessor.verifyFile(tempPath);
 
-    return await this.fileProcessor.convertAudioToWav(tempPath);
+    return tempPath;
   }
 
   /**

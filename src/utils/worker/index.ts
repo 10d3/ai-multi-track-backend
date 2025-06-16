@@ -63,20 +63,25 @@ const worker = new Worker<JobData>(
         currentOperation: "Combining speech with background",
       });
 
-      const combinedAudioPath = await audioProcessor.combineAllSpeechWithBackground(
-        speechFiles,
-        backgroundTrack,
-        job.data.transcript
-      );
+      const combinedAudioPath =
+        await audioProcessor.combineAllSpeechWithBackground(
+          speechFiles,
+          backgroundTrack,
+          job.data.transcript
+        );
 
-      // Step 4: Upload final result
+      // Step 4: Enhance and upload final result
       await job.updateProgress(90);
       await job.updateData({
         ...job.data,
-        currentOperation: "Uploading final audio",
+        currentOperation: "Enhancing and uploading final audio",
       });
 
-      const finalAudioUrl = await audioProcessor.uploadToStorage(combinedAudioPath);
+      const finalAudioUrl = await audioProcessor.uploadToStorage(
+        combinedAudioPath,
+        true, // Enable enhancement
+        "high" // Use high quality enhancement
+      );
 
       // Complete
       await job.updateProgress(100);
@@ -86,7 +91,6 @@ const worker = new Worker<JobData>(
         finalAudioUrl,
         processingTime: Date.now() - startTime,
       };
-
     } catch (error: any) {
       console.error("Job processing error:", error);
       await updateAudioProcessStatus(job.data.id, "failed");
