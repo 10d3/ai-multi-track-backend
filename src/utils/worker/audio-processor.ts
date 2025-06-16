@@ -33,15 +33,23 @@ type LoudnormStats = {
  * @returns The parsed loudnorm statistics object.
  */
 function parseLoudnormStats(ffmpegStderr: string): LoudnormStats {
-    // Ffmpeg prints the JSON stats within its verbose output. We need to find
-    // the JSON block, which starts with '{' and ends with '}'.
-    const jsonStart = ffmpegStderr.indexOf('{');
-    const jsonEnd = ffmpegStderr.lastIndexOf('}');
-    if (jsonStart === -1 || jsonEnd === -1) {
-        throw new Error("Could not find loudnorm JSON stats in ffmpeg output.");
-    }
-    const jsonString = ffmpegStderr.substring(jsonStart, jsonEnd + 1);
+  console.log("FFmpeg stderr output:", ffmpegStderr.substring(0, 500)); // Log first 500 chars for debugging
+  
+  // Ffmpeg prints the JSON stats within its verbose output. We need to find
+  // the JSON block, which starts with '{' and ends with '}'.
+  const jsonStart = ffmpegStderr.indexOf("{");
+  const jsonEnd = ffmpegStderr.lastIndexOf("}");
+  if (jsonStart === -1 || jsonEnd === -1) {
+    throw new Error("Could not find loudnorm JSON stats in ffmpeg output.");
+  }
+  const jsonString = ffmpegStderr.substring(jsonStart, jsonEnd + 1);
+  
+  try {
     return JSON.parse(jsonString) as LoudnormStats;
+  } catch (parseError) {
+    console.error("Failed to parse loudnorm JSON:", jsonString);
+    throw new Error(`Failed to parse loudnorm JSON: ${parseError}`);
+  }
 }
 
 export class AudioProcessor {
@@ -330,7 +338,7 @@ export class AudioProcessor {
       // PASS 1: Denoising & Speech Normalization
       // =========================================================================
       console.log("\nPASS 1: Applying Denoising and Speech Normalization...");
-      
+
       let pass1Filters = "";
       if (enhanceSpeech) {
         pass1Filters += "speechnorm=e=12.5:r=0.0005,";
@@ -347,22 +355,30 @@ export class AudioProcessor {
       // =========================================================================
       // PASS 2: Dynamics Compression & Equalization
       // =========================================================================
-      console.log("\nPASS 2: Applying Dynamics Compression and Equalization...");
+      console.log(
+        "\nPASS 2: Applying Dynamics Compression and Equalization..."
+      );
       let compressor: string, eq: string;
 
       switch (quality) {
         case "standard":
-          compressor = "acompressor=threshold=0.09:ratio=2:attack=20:release=250";
-          eq = "superequalizer=1b=10:2b=8:3b=10:4b=12:5b=10:6b=8:7b=10:8b=12:9b=14:10b=12:11b=10";
+          compressor =
+            "acompressor=threshold=0.09:ratio=2:attack=20:release=250";
+          eq =
+            "superequalizer=1b=10:2b=8:3b=10:4b=12:5b=10:6b=8:7b=10:8b=12:9b=14:10b=12:11b=10";
           break;
         case "ultra":
-          compressor = "acompressor=threshold=0.15:ratio=4:attack=5:release=150";
-          eq = "superequalizer=1b=10:2b=8:3b=10:4b=13:5b=10:6b=8:7b=12:8b=14:9b=16:10b=14:11b=12";
+          compressor =
+            "acompressor=threshold=0.15:ratio=4:attack=5:release=150";
+          eq =
+            "superequalizer=1b=10:2b=8:3b=10:4b=13:5b=10:6b=8:7b=12:8b=14:9b=16:10b=14:11b=12";
           break;
         case "high":
         default:
-          compressor = "acompressor=threshold=0.12:ratio=3:attack=10:release=200";
-          eq = "superequalizer=1b=10:2b=8:3b=10:4b=12:5b=10:6b=8:7b=11:8b=13:9b=15:10b=13:11b=11";
+          compressor =
+            "acompressor=threshold=0.12:ratio=3:attack=10:release=200";
+          eq =
+            "superequalizer=1b=10:2b=8:3b=10:4b=12:5b=10:6b=8:7b=11:8b=13:9b=15:10b=13:11b=11";
           break;
       }
 
@@ -376,12 +392,13 @@ export class AudioProcessor {
       // =========================================================================
       let currentInputForLoudnorm = tempDynamics;
       if (removeSilence) {
-          console.log("\nOPTIONAL PASS: Removing silence...");
-          const silenceFilter = "silenceremove=start_periods=1:start_duration=0.7:start_threshold=-55dB:stop_periods=-1:stop_duration=0.7:stop_threshold=-55dB";
-          await execAsync(
-              `ffmpeg -y -i "${tempDynamics}" -af "${silenceFilter}" -ar ${sampleRate} -c:a pcm_s24le "${tempSilence}"`
-          );
-          currentInputForLoudnorm = tempSilence;
+        console.log("\nOPTIONAL PASS: Removing silence...");
+        const silenceFilter =
+          "silenceremove=start_periods=1:start_duration=0.7:start_threshold=-55dB:stop_periods=-1:stop_duration=0.7:stop_threshold=-55dB";
+        await execAsync(
+          `ffmpeg -y -i "${tempDynamics}" -af "${silenceFilter}" -ar ${sampleRate} -c:a pcm_s24le "${tempSilence}"`
+        );
+        currentInputForLoudnorm = tempSilence;
       }
 
       // =========================================================================
@@ -391,32 +408,51 @@ export class AudioProcessor {
       // --- 3A: Analysis Run ---
       console.log("\nFINAL PASS (A): Analyzing for Loudness Normalization...");
       const loudnormAnalysisCommand = `ffmpeg -i "${currentInputForLoudnorm}" -af loudnorm=I=${targetLoudness}:TP=-1.5:LRA=11:print_format=json -f null -`;
-      
-      let analysisOutput = '';
+
+      let analysisOutput = "";
+      let stats: LoudnormStats | null = null;
+
       try {
-          // exec throws an error on non-zero exit codes, but ffmpeg with -f null
-          // intentionally exits with an error code, so we catch it to get stderr.
-          await execAsync(loudnormAnalysisCommand);
+        // exec throws an error on non-zero exit codes, but ffmpeg with -f null
+        // intentionally exits with an error code, so we catch it to get stderr.
+        await execAsync(loudnormAnalysisCommand);
       } catch (error: any) {
-          analysisOutput = error.stderr;
+        analysisOutput = error.stderr || error.stdout || "";
       }
 
-      const stats = parseLoudnormStats(analysisOutput);
-      console.log("Loudnorm Analysis Complete:");
-      console.log(`  - Measured I: ${stats.input_i}`);
-      console.log(`  - Target Offset: ${stats.target_offset}`);
+      // Try to parse loudnorm stats, fallback to single-pass if it fails
+      try {
+        if (analysisOutput) {
+          stats = parseLoudnormStats(analysisOutput);
+          console.log("Loudnorm Analysis Complete:");
+          console.log(`  - Measured I: ${stats.input_i}`);
+          console.log(`  - Target Offset: ${stats.target_offset}`);
+        }
+      } catch (parseError) {
+        console.warn("Failed to parse loudnorm stats, falling back to single-pass normalization:", parseError);
+        stats = null;
+      }
 
       // --- 3B: Application Run ---
       console.log("\nFINAL PASS (B): Applying Loudness Normalization...");
-      const finalLoudnormFilter = `loudnorm=I=${targetLoudness}:TP=-1.5:LRA=11:measured_I=${stats.input_i}:measured_TP=${stats.input_tp}:measured_LRA=${stats.input_lra}:measured_thresh=${stats.input_thresh}:offset=${stats.target_offset}:linear=true`;
-      
+
+      let finalLoudnormFilter: string;
+      if (stats) {
+        // Two-pass normalization with measured stats
+        finalLoudnormFilter = `loudnorm=I=${targetLoudness}:TP=-1.5:LRA=11:measured_I=${stats.input_i}:measured_TP=${stats.input_tp}:measured_LRA=${stats.input_lra}:measured_thresh=${stats.input_thresh}:offset=${stats.target_offset}:linear=true`;
+        console.log("Using two-pass loudness normalization");
+      } else {
+        // Fallback to single-pass normalization
+        finalLoudnormFilter = `loudnorm=I=${targetLoudness}:TP=-1.5:LRA=11`;
+        console.log("Using single-pass loudness normalization (fallback)");
+      }
+
       await execAsync(
         `ffmpeg -y -i "${currentInputForLoudnorm}" -af "${finalLoudnormFilter}" -ar ${sampleRate} -c:a pcm_s16le "${outputPath}"`
       );
 
       console.log(`\n✅ Audio processing complete!`);
       console.log(`Final file saved to: ${outputPath}`);
-
     } catch (error) {
       console.error("An error occurred during audio processing:", error);
       // Include stderr in the error output if it's an exec error
