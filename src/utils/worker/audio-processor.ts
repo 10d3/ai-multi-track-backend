@@ -9,8 +9,40 @@ import { SpeakerReferenceProcessor } from "./processor/speaker-reference-process
 import path from "path";
 import { exec } from "child_process";
 import fs from "fs/promises";
+import { mkdtemp, rm } from "fs/promises";
+import os from "os";
 
 const execAsync = promisify(exec);
+
+// A helper type for parsed loudnorm statistics
+type LoudnormStats = {
+  input_i: string;
+  input_tp: string;
+  input_lra: string;
+  input_thresh: string;
+  output_i: string;
+  output_tp: string;
+  output_lra: string;
+  output_thresh: string;
+  target_offset: string;
+};
+
+/**
+ * Parses the JSON output from ffmpeg's loudnorm filter stderr.
+ * @param ffmpegStderr The raw stderr string from the ffmpeg command.
+ * @returns The parsed loudnorm statistics object.
+ */
+function parseLoudnormStats(ffmpegStderr: string): LoudnormStats {
+    // Ffmpeg prints the JSON stats within its verbose output. We need to find
+    // the JSON block, which starts with '{' and ends with '}'.
+    const jsonStart = ffmpegStderr.indexOf('{');
+    const jsonEnd = ffmpegStderr.lastIndexOf('}');
+    if (jsonStart === -1 || jsonEnd === -1) {
+        throw new Error("Could not find loudnorm JSON stats in ffmpeg output.");
+    }
+    const jsonString = ffmpegStderr.substring(jsonStart, jsonEnd + 1);
+    return JSON.parse(jsonString) as LoudnormStats;
+}
 
 export class AudioProcessor {
   private fileProcessor: FileProcessor;
@@ -246,7 +278,11 @@ export class AudioProcessor {
     try {
       await this.processAudioFFmpeg6(inputPath, enhancedPath, {
         quality,
+        enhanceSpeech: true,
+        removeSilence: false, // Don't remove silence from final audio (might cut speech)
+        useAINoise: true,
         sampleRate: 44100, // Higher quality for final output
+        targetLoudness: -16, // Broadcast standard for final audio
       });
 
       console.log(`Final audio enhanced with ${quality} quality`);
@@ -258,77 +294,140 @@ export class AudioProcessor {
   }
 
   /**
-   * Enhanced final audio processing - optimized for speech+music content
-   * Removes bass buildup and noise while enhancing speech clarity
+   * FFmpeg Advanced Multi-Pass Audio Processing for speech enhancement
    */
   private async processAudioFFmpeg6(
     inputPath: string,
     outputPath: string,
     options: {
       sampleRate?: number;
+      targetLoudness?: number;
+      useAINoise?: boolean;
+      removeSilence?: boolean;
+      enhanceSpeech?: boolean;
       quality?: "standard" | "high" | "ultra";
     } = {}
   ): Promise<void> {
-    const { sampleRate = 44100, quality = "high" } = options;
+    const {
+      sampleRate = 48000,
+      targetLoudness = -16.0,
+      useAINoise = true,
+      removeSilence = true,
+      enhanceSpeech = true,
+      quality = "high",
+    } = options;
 
-    // Optimized filter chain for clean speech+music enhancement
-    let filterChain = "";
+    // --- Temporary Directory Setup ---
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "audio-enhancer-"));
+    const tempDenoised = path.join(tempDir, "denoised.wav");
+    const tempDynamics = path.join(tempDir, "dynamics.wav");
+    const tempSilence = path.join(tempDir, "silence.wav");
 
-    if (quality === "standard") {
-      // Basic enhancement - fast processing
-      filterChain = [
-        "highpass=f=80",
-        "afftdn=nr=15:nf=-15:nt=w",
-        "equalizer=f=1000:width_type=h:width=1.5:g=2",
-        "equalizer=f=3000:width_type=h:width=1:g=3",
-        "dynaudnorm=p=0.9:m=10:s=20:g=10",
-        "lowpass=f=12000"
-      ].join(",");
-    } else if (quality === "ultra") {
-      // Maximum quality enhancement - optimized for broadcast standards
-      filterChain = [
-        "highpass=f=80",
-        "anlmdn=s=0.00001:p=0.08:r=0.02:m=15",
-        "afftdn=nr=25:nf=-25:nt=w",
-        "silenceremove=start_periods=1:start_duration=0.05:start_threshold=-65dB:detection=peak:stop_periods=-1:stop_duration=0.05:stop_threshold=-65dB",
-        "volume=3.5", // Stronger pre-amplification for ultra quality
-        "equalizer=f=200:width_type=h:width=2:g=7", // Enhanced low-mid
-        "equalizer=f=1000:width_type=h:width=1.5:g=5", // Strong speech fundamental
-        "equalizer=f=3000:width_type=h:width=1:g=6", // Maximum speech presence
-        "equalizer=f=8000:width_type=h:width=2:g=4", // Enhanced clarity and sibilance
-        "compand=attacks=0.03:decays=0.08:points=-80/-80|-60/-35|-40/-25|-20/-12|-10/-6|0/-1|20/0", // Ultra aggressive compression
-        "dynaudnorm=p=0.98:m=25:s=12:g=25:r=0.2:b=1:c=1", // Maximum normalization
-        "acompressor=threshold=0.15:ratio=6:attack=30:release=150:makeup=3", // Strong final compression
-        "alimiter=level_in=1:level_out=0.95:limit=0.95:attack=5:release=50", // Prevent clipping
-        "loudnorm=I=-14:TP=-0.5:LRA=5:linear=true", // Broadcast-ready loudness
-        "lowpass=f=12000"
-      ].join(",");
-    } else {
-      // High quality (default) - enhanced based on audio analysis
-      filterChain = [
-        "highpass=f=80",
-        "anlmdn=s=0.00001:p=0.08:r=0.02:m=15",
-        "afftdn=nr=20:nf=-20:nt=w",
-        "silenceremove=start_periods=1:start_duration=0.1:start_threshold=-60dB:detection=peak:stop_periods=-1:stop_duration=0.1:stop_threshold=-60dB", // Remove problematic silences
-        "volume=3.0", // Pre-amplify before processing (addresses low level issue)
-        "equalizer=f=200:width_type=h:width=2:g=6",
-        "equalizer=f=1000:width_type=h:width=1.5:g=4", // Increased speech clarity
-        "equalizer=f=3000:width_type=h:width=1:g=5", // More speech presence
-        "equalizer=f=8000:width_type=h:width=2:g=3", // Enhanced clarity
-        "compand=attacks=0.05:decays=0.1:points=-80/-80|-60/-30|-40/-20|-20/-10|-10/-5|0/-2|20/0", // More aggressive compression
-        "dynaudnorm=p=0.95:m=20:s=15:g=20:r=0.3:b=1", // Stronger normalization with faster response
-        "acompressor=threshold=0.2:ratio=4:attack=50:release=200:makeup=2", // Additional compression for consistency
-        "loudnorm=I=-16:TP=-1:LRA=7:linear=true", // Final loudness normalization
-        "lowpass=f=12000"
-      ].join(",");
+    console.log(`Created temporary directory: ${tempDir}`);
+
+    try {
+      // =========================================================================
+      // PASS 1: Denoising & Speech Normalization
+      // =========================================================================
+      console.log("\nPASS 1: Applying Denoising and Speech Normalization...");
+      
+      let pass1Filters = "";
+      if (enhanceSpeech) {
+        pass1Filters += "speechnorm=e=12.5:r=0.0005,";
+      }
+      if (useAINoise) {
+        pass1Filters += "afftdn=nf=-25:nr=33,";
+      }
+      pass1Filters += "highpass=f=80";
+
+      await execAsync(
+        `ffmpeg -y -i "${inputPath}" -af "${pass1Filters}" -ar ${sampleRate} -c:a pcm_s24le "${tempDenoised}"`
+      );
+
+      // =========================================================================
+      // PASS 2: Dynamics Compression & Equalization
+      // =========================================================================
+      console.log("\nPASS 2: Applying Dynamics Compression and Equalization...");
+      let compressor: string, eq: string;
+
+      switch (quality) {
+        case "standard":
+          compressor = "acompressor=threshold=0.09:ratio=2:attack=20:release=250";
+          eq = "superequalizer=1b=10:2b=8:3b=10:4b=12:5b=10:6b=8:7b=10:8b=12:9b=14:10b=12:11b=10";
+          break;
+        case "ultra":
+          compressor = "acompressor=threshold=0.15:ratio=4:attack=5:release=150";
+          eq = "superequalizer=1b=10:2b=8:3b=10:4b=13:5b=10:6b=8:7b=12:8b=14:9b=16:10b=14:11b=12";
+          break;
+        case "high":
+        default:
+          compressor = "acompressor=threshold=0.12:ratio=3:attack=10:release=200";
+          eq = "superequalizer=1b=10:2b=8:3b=10:4b=12:5b=10:6b=8:7b=11:8b=13:9b=15:10b=13:11b=11";
+          break;
+      }
+
+      const pass2Filters = `${compressor},${eq},lowpass=f=20000`;
+      await execAsync(
+        `ffmpeg -y -i "${tempDenoised}" -af "${pass2Filters}" -ar ${sampleRate} -c:a pcm_s24le "${tempDynamics}"`
+      );
+
+      // =========================================================================
+      // OPTIONAL PASS: Silence Removal
+      // =========================================================================
+      let currentInputForLoudnorm = tempDynamics;
+      if (removeSilence) {
+          console.log("\nOPTIONAL PASS: Removing silence...");
+          const silenceFilter = "silenceremove=start_periods=1:start_duration=0.7:start_threshold=-55dB:stop_periods=-1:stop_duration=0.7:stop_threshold=-55dB";
+          await execAsync(
+              `ffmpeg -y -i "${tempDynamics}" -af "${silenceFilter}" -ar ${sampleRate} -c:a pcm_s24le "${tempSilence}"`
+          );
+          currentInputForLoudnorm = tempSilence;
+      }
+
+      // =========================================================================
+      // FINAL PASS (A & B): Two-Pass Loudness Normalization
+      // =========================================================================
+
+      // --- 3A: Analysis Run ---
+      console.log("\nFINAL PASS (A): Analyzing for Loudness Normalization...");
+      const loudnormAnalysisCommand = `ffmpeg -i "${currentInputForLoudnorm}" -af loudnorm=I=${targetLoudness}:TP=-1.5:LRA=11:print_format=json -f null -`;
+      
+      let analysisOutput = '';
+      try {
+          // exec throws an error on non-zero exit codes, but ffmpeg with -f null
+          // intentionally exits with an error code, so we catch it to get stderr.
+          await execAsync(loudnormAnalysisCommand);
+      } catch (error: any) {
+          analysisOutput = error.stderr;
+      }
+
+      const stats = parseLoudnormStats(analysisOutput);
+      console.log("Loudnorm Analysis Complete:");
+      console.log(`  - Measured I: ${stats.input_i}`);
+      console.log(`  - Target Offset: ${stats.target_offset}`);
+
+      // --- 3B: Application Run ---
+      console.log("\nFINAL PASS (B): Applying Loudness Normalization...");
+      const finalLoudnormFilter = `loudnorm=I=${targetLoudness}:TP=-1.5:LRA=11:measured_I=${stats.input_i}:measured_TP=${stats.input_tp}:measured_LRA=${stats.input_lra}:measured_thresh=${stats.input_thresh}:offset=${stats.target_offset}:linear=true`;
+      
+      await execAsync(
+        `ffmpeg -y -i "${currentInputForLoudnorm}" -af "${finalLoudnormFilter}" -ar ${sampleRate} -c:a pcm_s16le "${outputPath}"`
+      );
+
+      console.log(`\n✅ Audio processing complete!`);
+      console.log(`Final file saved to: ${outputPath}`);
+
+    } catch (error) {
+      console.error("An error occurred during audio processing:", error);
+      // Include stderr in the error output if it's an exec error
+      if ((error as any).stderr) {
+        console.error("FFmpeg stderr:", (error as any).stderr);
+      }
+      throw error; // Re-throw the error to be handled by the caller
+    } finally {
+      // --- Cleanup ---
+      console.log("\nCleaning up temporary files...");
+      await rm(tempDir, { recursive: true, force: true });
     }
-
-    console.log(`[AudioProcessor] Applying ${quality} quality enhancement`);
-
-    // Execute enhanced processing
-    await execAsync(
-      `ffmpeg -y -threads 0 -i "${inputPath}" -af "${filterChain}" -c:a pcm_s24le -ar ${sampleRate} "${outputPath}"`,
-      { maxBuffer: 1024 * 1024 * 20 }
-    );
   }
 }
