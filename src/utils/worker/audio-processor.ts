@@ -285,31 +285,40 @@ export class AudioProcessor {
         "lowpass=f=12000"
       ].join(",");
     } else if (quality === "ultra") {
-      // Maximum quality enhancement
+      // Maximum quality enhancement - optimized for broadcast standards
       filterChain = [
         "highpass=f=80",
-        "anlmdn=s=0.00001:p=0.08:r=0.02:m=15", // Fixed: p=0.08 (within 0.001-0.1 range)
+        "anlmdn=s=0.00001:p=0.08:r=0.02:m=15",
         "afftdn=nr=25:nf=-25:nt=w",
-        "equalizer=f=200:width_type=h:width=2:g=6",
-        "equalizer=f=1000:width_type=h:width=1.5:g=3",
-        "equalizer=f=3000:width_type=h:width=1:g=4",
-        "equalizer=f=8000:width_type=h:width=2:g=2",
-        "compand=attacks=0.1:decays=0.2:points=-80/-80|-20/-15|-10/-10|-5/-7|0/-3|20/0",
-        "dynaudnorm=p=0.9:m=15:s=30:g=15",
+        "silenceremove=start_periods=1:start_duration=0.05:start_threshold=-65dB:detection=peak:stop_periods=-1:stop_duration=0.05:stop_threshold=-65dB",
+        "volume=3.5", // Stronger pre-amplification for ultra quality
+        "equalizer=f=200:width_type=h:width=2:g=7", // Enhanced low-mid
+        "equalizer=f=1000:width_type=h:width=1.5:g=5", // Strong speech fundamental
+        "equalizer=f=3000:width_type=h:width=1:g=6", // Maximum speech presence
+        "equalizer=f=8000:width_type=h:width=2:g=4", // Enhanced clarity and sibilance
+        "compand=attacks=0.03:decays=0.08:points=-80/-80|-60/-35|-40/-25|-20/-12|-10/-6|0/-1|20/0", // Ultra aggressive compression
+        "dynaudnorm=p=0.98:m=25:s=12:g=25:r=0.2:b=1:c=1", // Maximum normalization
+        "acompressor=threshold=0.15:ratio=6:attack=30:release=150:makeup=3", // Strong final compression
+        "alimiter=level_in=1:level_out=0.95:limit=0.95:attack=5:release=50", // Prevent clipping
+        "loudnorm=I=-14:TP=-0.5:LRA=5:linear=true", // Broadcast-ready loudness
         "lowpass=f=12000"
       ].join(",");
     } else {
-      // High quality (default) - balanced processing
+      // High quality (default) - enhanced based on audio analysis
       filterChain = [
         "highpass=f=80",
-        "anlmdn=s=0.00001:p=0.08:r=0.02:m=15", // Fixed: p=0.08 (within 0.001-0.1 range)
+        "anlmdn=s=0.00001:p=0.08:r=0.02:m=15",
         "afftdn=nr=20:nf=-20:nt=w",
+        "silenceremove=start_periods=1:start_duration=0.1:start_threshold=-60dB:detection=peak:stop_periods=-1:stop_duration=0.1:stop_threshold=-60dB", // Remove problematic silences
+        "volume=3.0", // Pre-amplify before processing (addresses low level issue)
         "equalizer=f=200:width_type=h:width=2:g=6",
-        "equalizer=f=1000:width_type=h:width=1.5:g=3",
-        "equalizer=f=3000:width_type=h:width=1:g=4",
-        "equalizer=f=8000:width_type=h:width=2:g=2",
-        "compand=attacks=0.1:decays=0.2:points=-80/-80|-20/-15|-10/-10|-5/-7|0/-3|20/0",
-        "dynaudnorm=p=0.9:m=15:s=30:g=15",
+        "equalizer=f=1000:width_type=h:width=1.5:g=4", // Increased speech clarity
+        "equalizer=f=3000:width_type=h:width=1:g=5", // More speech presence
+        "equalizer=f=8000:width_type=h:width=2:g=3", // Enhanced clarity
+        "compand=attacks=0.05:decays=0.1:points=-80/-80|-60/-30|-40/-20|-20/-10|-10/-5|0/-2|20/0", // More aggressive compression
+        "dynaudnorm=p=0.95:m=20:s=15:g=20:r=0.3:b=1", // Stronger normalization with faster response
+        "acompressor=threshold=0.2:ratio=4:attack=50:release=200:makeup=2", // Additional compression for consistency
+        "loudnorm=I=-16:TP=-1:LRA=7:linear=true", // Final loudness normalization
         "lowpass=f=12000"
       ].join(",");
     }
