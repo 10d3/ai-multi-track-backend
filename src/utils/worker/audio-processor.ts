@@ -288,7 +288,7 @@ export class AudioProcessor {
       // Maximum quality enhancement
       filterChain = [
         "highpass=f=80",
-        "anlmdn=s=0.00001:p=0.15:r=0.02:m=15",
+        "anlmdn=s=0.00001:p=0.08:r=0.02:m=15", // Fixed: p=0.08 (within 0.001-0.1 range)
         "afftdn=nr=25:nf=-25:nt=w",
         "equalizer=f=200:width_type=h:width=2:g=6",
         "equalizer=f=1000:width_type=h:width=1.5:g=3",
@@ -302,7 +302,7 @@ export class AudioProcessor {
       // High quality (default) - balanced processing
       filterChain = [
         "highpass=f=80",
-        "anlmdn=s=0.00001:p=0.15:r=0.02:m=15",
+        "anlmdn=s=0.00001:p=0.08:r=0.02:m=15", // Fixed: p=0.08 (within 0.001-0.1 range)
         "afftdn=nr=20:nf=-20:nt=w",
         "equalizer=f=200:width_type=h:width=2:g=6",
         "equalizer=f=1000:width_type=h:width=1.5:g=3",
