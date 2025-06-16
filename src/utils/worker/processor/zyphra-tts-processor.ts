@@ -86,6 +86,73 @@ export class ZyphraTTS {
     // console.log("[ZyphraTTS] Initialized ZyphraTTS processor");
   }
 
+  /**
+   * Get audio duration using ffprobe
+   */
+  private async getAudioDuration(filePath: string): Promise<number> {
+    try {
+      const { stdout } = await execAsync(
+        `ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${filePath}"`
+      );
+      return parseFloat(stdout.trim());
+    } catch (error) {
+      console.error("Error getting audio duration:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Clean and optimize reference audio for better TTS results
+   */
+  private async cleanReferenceAudio(inputPath: string): Promise<string> {
+    try {
+      console.log(`[ZyphraTTS] Cleaning reference audio: ${inputPath}`);
+
+      // Create output path
+      const cleanedPath = await this.fileProcessor.createTempPath(
+        "cleaned_reference",
+        "wav"
+      );
+
+      // Advanced audio cleaning specifically for TTS reference
+      // 1. Normalize to standard format
+      // 2. Remove silence at beginning/end
+      // 3. Apply noise reduction
+      // 4. Ensure consistent sample rate and bit depth
+      // 5. Apply gentle compression for consistent levels
+      const ffmpegCommand = `ffmpeg -y -i "${inputPath}" \
+        -af "silenceremove=start_periods=1:start_duration=1:start_threshold=-60dB:detection=peak,\
+        silenceremove=stop_periods=-1:stop_duration=1:stop_threshold=-60dB:detection=peak,\
+        highpass=f=75,\
+        lowpass=f=8000,\
+        afftdn=nf=-20:nt=w,\
+        acompressor=threshold=0.1:ratio=2:attack=100:release=800,\
+        loudnorm=I=-20:TP=-2:LRA=7,\
+        aresample=22050" \
+        -c:a pcm_s16le \
+        -ac 1 \
+        "${cleanedPath}"`;
+
+      console.log(`[ZyphraTTS] Executing audio cleaning command`);
+      await execAsync(ffmpegCommand);
+
+      // Verify the cleaned file
+      await this.fileProcessor.verifyFile(cleanedPath);
+
+      console.log(
+        `[ZyphraTTS] Reference audio cleaned successfully: ${cleanedPath}`
+      );
+      return cleanedPath;
+    } catch (error) {
+      console.error(`[ZyphraTTS] Failed to clean reference audio:`, error);
+      // Fallback to original file if cleaning fails
+      console.log(
+        `[ZyphraTTS] Using original reference audio due to cleaning failure`
+      );
+      return inputPath;
+    }
+  }
+
   private getDefaultEmotions(): EmotionWeights {
     return {
       happiness: 0.6,
@@ -327,20 +394,48 @@ export class ZyphraTTS {
           throw new Error("Reference audio is required for voice cloning");
         }
         try {
-          // console.log(
-          //   `[ZyphraTTS] Processing reference audio for cloning: ${referenceAudioPath}`
-          // );
-          speaker_audio = readFileSync(referenceAudioPath).toString("base64");
-          // console.log(
-          //   `[ZyphraTTS] Reference audio converted to base64 (length: ${speaker_audio.length})`
-          // );
+          console.log(
+            `[ZyphraTTS] Processing reference audio for cloning: ${referenceAudioPath}`
+          );
+
+          // Verify original file exists first
+          await this.fileProcessor.verifyFile(referenceAudioPath);
+
+          // First, let's clean and validate the reference audio
+          const cleanedAudioPath = await this.cleanReferenceAudio(
+            referenceAudioPath
+          );
+
+          // Verify the cleaned audio file
+          await this.fileProcessor.verifyFile(cleanedAudioPath);
+
+          // Get audio info for debugging
+          const audioDuration = await this.getAudioDuration(cleanedAudioPath);
+          console.log(
+            `[ZyphraTTS] Reference audio duration: ${audioDuration.toFixed(2)}s`
+          );
+
+          // Read and convert to base64
+          const audioBuffer = readFileSync(cleanedAudioPath);
+          speaker_audio = audioBuffer.toString("base64");
+
+          console.log(
+            `[ZyphraTTS] Reference audio converted to base64 (length: ${speaker_audio.length})`
+          );
+          console.log(
+            `[ZyphraTTS] Audio buffer size: ${audioBuffer.length} bytes`
+          );
         } catch (error) {
           console.error(
             "[ZyphraTTS] Failed to read reference audio for cloning:",
             error
           );
+          console.error(
+            "[ZyphraTTS] Reference audio path:",
+            referenceAudioPath
+          );
           throw new Error(
-            "Failed to process reference audio for voice cloning"
+            `Failed to process reference audio for voice cloning: ${error}`
           );
         }
       }
@@ -382,7 +477,7 @@ export class ZyphraTTS {
             ...baseParams,
             model: "zonos-v0.1-hybrid",
             vqscore: 0.7,
-            speaker_noised: true,
+            speaker_noised: false,
             fmax: 20000,
           }
         : {
@@ -560,7 +655,8 @@ export class ZyphraTTS {
 
   async processZypMultipleTTS(
     ttsRequests: ZyphraTTSRequest[],
-    language: string
+    language: string,
+    referenceAudioPath?: string
   ): Promise<Array<string>> {
     // console.log(
     //   `[ZyphraTTS] Processing multiple TTS requests (count: ${
@@ -593,11 +689,24 @@ export class ZyphraTTS {
         try {
           // Process each request in the batch with individual error handling
           const batchResults = await Promise.all(
-            batch.map(async (request) => {
+            batch.map(async (request, index) => {
               try {
+                // Debug logging
+                console.log(`[ZyphraTTS] Processing request ${index}:`, {
+                  text: request.textToSpeech?.substring(0, 50) + "...",
+                  voice_id: request.voice_id,
+                  voice_name: request.voice_name,
+                  has_referenceAudioPath: !!request.referenceAudioPath,
+                  referenceAudioPath_from_param: !!referenceAudioPath,
+                  is_cloning: request.voice_id === "cloning-voice",
+                });
+
                 const filePath = await this.processZypTTS({
                   ...request,
                   language_iso_code: language || request.language_iso_code,
+                  // Ensure referenceAudioPath is passed (prioritize request's path, fallback to parameter)
+                  referenceAudioPath:
+                    request.referenceAudioPath || referenceAudioPath,
                 });
 
                 // Apply hybrid duration adjustment if start and end times are provided
