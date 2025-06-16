@@ -104,6 +104,13 @@ export class ZyphraTTS {
       throw new Error("Text is required for TTS generation");
     }
 
+    // Debug: Log emotion usage
+    const finalEmotion = emotion || this.getDefaultEmotion();
+    console.log(`[ZyphraTTS] Using emotion for "${textToSpeech.substring(0, 30)}...":`, {
+      provided: !!emotion,
+      emotion: finalEmotion
+    });
+
     const client = await this.getClient();
     const isCloning = voice_id === "cloning-voice";
 
@@ -115,7 +122,7 @@ export class ZyphraTTS {
       model: "zonos-v0.1-transformer",
       vqscore: 0.6, // Must be between 0.6 and 0.8 per Zyphra API requirements
       language_iso_code,
-      emotion: emotion || this.getDefaultEmotion(), // Use provided emotion or default
+      emotion: finalEmotion, // Use provided emotion from request or default
     };
 
     // Handle voice cloning
