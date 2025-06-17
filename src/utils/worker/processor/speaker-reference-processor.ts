@@ -77,11 +77,23 @@ export class SpeakerReferenceProcessor {
     const startTime = longestSegment.start / 1000; // Convert to seconds
     const duration = (longestSegment.end - longestSegment.start) / 1000;
 
-    // Extract and clean the audio segment
+    // Extract and clean the audio segment for voice cloning
+    // Only enhance speech and remove noise - preserve all frequencies
+    let referenceFilters = "";
+    
+    // Speech enhancement for better clarity
+    referenceFilters += "speechnorm=e=12.5:r=0.0005,";
+    
+    // AI noise reduction to remove background noise
+    referenceFilters += "afftdn=nf=-25:nr=33,";
+    
+    // Gentle loudness normalization only
+    referenceFilters += "loudnorm=I=-16:TP=-2:LRA=15";
+
     await execAsync(
       `ffmpeg -y -i "${originalAudio}" -ss ${startTime} -t ${duration} \
-       -af "highpass=f=80,lowpass=f=8000,afftdn=nf=-20:nt=w,loudnorm=I=-20:TP=-2" \
-       -c:a pcm_s16le -ac 1 -ar 22050 "${outputPath}"`
+       -af "${referenceFilters}" \
+       -c:a pcm_s16le -ac 1 -ar 44100 "${outputPath}"`
     );
 
     await this.fileProcessor.verifyFile(outputPath);
